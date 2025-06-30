@@ -30,9 +30,15 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate {
         setupUI()
         
         locationManager.delegate = self
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
         
-        // Start checking connectivity
-        checkConnectivity()
+        // Ensure we're on the main thread and view is in hierarchy
+        DispatchQueue.main.async { [weak self] in
+            self?.checkConnectivity()
+        }
     }
     
     private func setupUI() {
@@ -67,7 +73,7 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate {
             // Everything is OK, proceed
             statusLabel.text = "Connectivity OK!\nProceeding..."
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                self.proceedToPermissionCheck()
+                self.proceedToMain()
             }
         }
     }
@@ -117,9 +123,27 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate {
         return isReachable && !needsConnection
     }
     
-    private func proceedToPermissionCheck() {
-        let permissionVC = PermissionViewController()
-        permissionVC.modalPresentationStyle = .fullScreen
-        self.present(permissionVC, animated: true)
+    private func proceedToMain() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Check if we're still the top view controller
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let window = windowScene.windows.first,
+                  let topViewController = window.rootViewController?.topMostViewController(),
+                  topViewController == self else {
+                print("🚫 ConnectivityViewController not top view controller - skipping navigation")
+                return
+            }
+            
+            // Always go to permission check first, regardless of first run
+            let permissionCheckVC = PermissionCheckViewController()
+            permissionCheckVC.modalPresentationStyle = .fullScreen
+            permissionCheckVC.modalTransitionStyle = .crossDissolve
+            
+            self.present(permissionCheckVC, animated: true) {
+                print("✅ PermissionCheckViewController presented successfully")
+            }
+        }
     }
 }

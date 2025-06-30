@@ -10,10 +10,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         window = UIWindow(windowScene: windowScene)
 
-        // Set MainViewController as the root so your WebView loads at launch
-        let mainViewController = MainViewController()
-        window?.rootViewController = mainViewController
+        // Start with SplashViewController to ensure proper permission flow
+        let splashViewController = SplashViewController()
+        window?.rootViewController = splashViewController
         window?.makeKeyAndVisible()
+    }
+    
+    // MARK: - Navigation Helper
+    func setMainViewControllerAsRoot() {
+        let mainVC = MainViewController()
+        mainVC.modalPresentationStyle = .fullScreen
+        mainVC.modalTransitionStyle = .crossDissolve
+        
+        // Set as root view controller with animation
+        UIView.transition(with: window!, duration: 0.5, options: .transitionCrossDissolve, animations: {
+            self.window?.rootViewController = mainVC
+        }, completion: nil)
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {

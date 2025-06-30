@@ -3,12 +3,22 @@ import CoreLocation
 import AVFoundation
 import UserNotifications
 
-class PermissionViewController: UIViewController, CLLocationManagerDelegate {
+class PermissionViewController: UIViewController, CLLocationManagerDelegate, PermissionManagerDelegate {
     
     private let locationManager = CLLocationManager()
+    private let permissionManager = PermissionManager.shared
     private var cameraGranted = false
     private var notificationGranted = false
     private var locationGranted = false
+    
+    // Add flag to prevent repeated permission dialogs
+    private var didDeferPermissions: Bool {
+        get { UserDefaults.standard.bool(forKey: "didDeferPermissions") }
+        set { UserDefaults.standard.set(newValue, forKey: "didDeferPermissions") }
+    }
+    
+    // Add flag to prevent infinite loop
+    private var hasProceededToMain = false
     
     private let statusLabel: UILabel = {
         let label = UILabel()
@@ -24,18 +34,23 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
         view.backgroundColor = .white
         setupUI()
         
-        // 🔧 Move delegate setup here for better timing
+        // Setup managers
         locationManager.delegate = self
+        permissionManager.delegate = self
         
         // 🔍 Add debug info button
         setupDebugButton()
         
         // 🔍 Test permissions status first
         debugPermissionStatus()
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
         
-        // Start permission flow after a small delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.requestAllPermissions()
+        // Ensure we're on the main thread and view is in hierarchy
+        DispatchQueue.main.async { [weak self] in
+            self?.checkAndRequestPermissions()
         }
     }
     
@@ -86,12 +101,12 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
         print("👤 User: engomidjalal")
         
         // Location
-        let locationStatus = CLLocationManager.authorizationStatus()
+        let locationStatus = permissionManager.getPermissionStatus(for: .location)
         print("📍 Location Status: \(locationStatusString(locationStatus)) (Raw: \(locationStatus.rawValue))")
         print("📍 Location Services Enabled: \(CLLocationManager.locationServicesEnabled())")
         
         // Camera
-        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        let cameraStatus = permissionManager.getPermissionStatus(for: .camera)
         print("📷 Camera Status: \(cameraStatusString(cameraStatus)) (Raw: \(cameraStatus.rawValue))")
         
         // Notifications
@@ -107,24 +122,21 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
     }
     
     // 🔍 DEBUG: Helper functions for readable status
-    private func locationStatusString(_ status: CLAuthorizationStatus) -> String {
+    private func locationStatusString(_ status: PermissionStatus) -> String {
         switch status {
         case .notDetermined: return "NOT DETERMINED ⚪️"
         case .denied: return "DENIED ❌"
         case .restricted: return "RESTRICTED ⚠️"
-        case .authorizedWhenInUse: return "WHEN IN USE ✅"
-        case .authorizedAlways: return "ALWAYS ✅"
-        @unknown default: return "UNKNOWN ❓"
+        case .granted: return "GRANTED ✅"
         }
     }
     
-    private func cameraStatusString(_ status: AVAuthorizationStatus) -> String {
+    private func cameraStatusString(_ status: PermissionStatus) -> String {
         switch status {
         case .notDetermined: return "NOT DETERMINED ⚪️"
         case .denied: return "DENIED ❌"
         case .restricted: return "RESTRICTED ⚠️"
-        case .authorized: return "AUTHORIZED ✅"
-        @unknown default: return "UNKNOWN ❓"
+        case .granted: return "GRANTED ✅"
         }
     }
     
@@ -141,8 +153,8 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
     
     // 🔍 DEBUG: Show detailed alert with current status
     private func showDetailedDebugAlert() {
-        let locationStatus = CLLocationManager.authorizationStatus()
-        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        let locationStatus = permissionManager.getPermissionStatus(for: .location)
+        let cameraStatus = permissionManager.getPermissionStatus(for: .camera)
         
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
@@ -157,7 +169,12 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
                 
                 let alert = UIAlertController(title: "🔍 Permission Debug", message: message, preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "Reset & Request Again", style: .default) { _ in
+                    self.didDeferPermissions = false  // Reset deferred flag
                     self.forceRequestAllPermissions()
+                })
+                alert.addAction(UIAlertAction(title: "Clear Deferred Flag", style: .default) { _ in
+                    self.didDeferPermissions = false
+                    print("🔄 Deferred flag cleared - will show permission dialog again")
                 })
                 alert.addAction(UIAlertAction(title: "Go to Settings", style: .default) { _ in
                     self.openSettings()
@@ -176,7 +193,7 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
     
     // 🔍 DEBUG: Enhanced location permission request
     private func requestLocationPermission() {
-        let status = CLLocationManager.authorizationStatus()
+        let status = permissionManager.getPermissionStatus(for: .location)
         
         print("\n📍 LOCATION PERMISSION REQUEST")
         print("Current status: \(locationStatusString(status))")
@@ -188,9 +205,9 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
             locationManager.requestWhenInUseAuthorization()
         } else {
             print("⚠️ Status already determined - skipping request")
-            locationGranted = (status == .authorizedAlways || status == .authorizedWhenInUse)
+            locationGranted = status.isGranted
             print("Location granted: \(locationGranted)")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            DispatchQueue.main.async {
                 self.requestCameraPermission()
             }
         }
@@ -199,7 +216,7 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
     // 🔍 DEBUG: Enhanced delegate callback
     func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
         print("\n🔄 LOCATION AUTHORIZATION CHANGED")
-        print("New status: \(locationStatusString(status))")
+        print("New status: \(locationStatusString(permissionManager.getPermissionStatus(for: .location)))")
         
         locationGranted = (status == .authorizedAlways || status == .authorizedWhenInUse)
         print("Location granted: \(locationGranted)")
@@ -225,7 +242,7 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
     
     // 🔍 DEBUG: Enhanced camera permission request
     private func requestCameraPermission() {
-        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        let status = permissionManager.getPermissionStatus(for: .camera)
         
         print("\n📷 CAMERA PERMISSION REQUEST")
         print("Current status: \(cameraStatusString(status))")
@@ -242,7 +259,7 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
                     self.requestNotificationPermission()
                 }
             }
-        case .authorized:
+        case .granted:
             print("✅ Camera already authorized")
             cameraGranted = true
             requestNotificationPermission()
@@ -301,8 +318,10 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
         if locationGranted && cameraGranted && notificationGranted {
             statusLabel.text = "All permissions granted! ✅\nProceeding..."
             print("🎉 All permissions granted - proceeding to main app")
+            // Clear deferred flag since permissions are now granted
+            didDeferPermissions = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.goToMain()
+                self.proceedToMain()
             }
         } else {
             let missingPermissions = [
@@ -319,17 +338,56 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
     }
     
     private func showPermissionMissingAlert() {
+        DispatchQueue.main.async {
+            let alert = UIAlertController(
+                title: "Permissions Required",
+                message: "Zoobox needs Location, Camera, and Notification permissions to work properly.\nPlease enable them in Settings.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Open Settings", style: .default, handler: { _ in
+                self.openSettings()
+            }))
+            alert.addAction(UIAlertAction(title: "Retry", style: .cancel, handler: { _ in
+                self.requestAllPermissions()
+            }))
+            self.present(alert, animated: true)
+        }
+    }
+    
+    // MARK: - PermissionManagerDelegate
+    
+    func permissionManager(_ manager: PermissionManager, didUpdatePermissions permissions: [PermissionType: PermissionStatus]) {
+        // Update local permission status
+        locationGranted = permissions[.location]?.isGranted ?? false
+        cameraGranted = permissions[.camera]?.isGranted ?? false
+        notificationGranted = permissions[.notifications]?.isGranted ?? false
+        
+        print("🔐 PermissionManager updated permissions:")
+        print("Location: \(locationGranted ? "✅" : "❌")")
+        print("Camera: \(cameraGranted ? "✅" : "❌")")
+        print("Notifications: \(notificationGranted ? "✅" : "❌")")
+    }
+    
+    func permissionManager(_ manager: PermissionManager, requiresPermissionAlertFor permission: PermissionType) {
+        // Handle permission alert when no view controller is available
+        showPermissionAlert(for: permission)
+    }
+    
+    private func showPermissionAlert(for permission: PermissionType) {
         let alert = UIAlertController(
-            title: "Permissions Required",
-            message: "Zoobox needs Location, Camera, and Notification permissions to work properly.\nPlease enable them in Settings.",
+            title: "\(permission.displayName) Permission Required",
+            message: "Please enable \(permission.displayName.lowercased()) permissions in Settings to use this feature.",
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: "Open Settings", style: .default, handler: { _ in
-            self.openSettings()
-        }))
-        alert.addAction(UIAlertAction(title: "Retry", style: .cancel, handler: { _ in
-            self.requestAllPermissions()
-        }))
+        
+        alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        })
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
         present(alert, animated: true)
     }
     
@@ -337,17 +395,9 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
     private func forceRequestAllPermissions() {
         print("🔄 FORCE REQUESTING ALL PERMISSIONS")
         
-        // Force location request
-        locationManager.requestWhenInUseAuthorization()
-        
-        // Force camera request
-        AVCaptureDevice.requestAccess(for: .video) { granted in
-            print("📷 Forced camera request result: \(granted)")
-        }
-        
-        // Force notification request
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            print("🔔 Forced notification request result: \(granted)")
+        // Use PermissionManager to request all permissions
+        for permissionType in PermissionType.allCases {
+            permissionManager.requestPermission(for: permissionType, from: self)
         }
     }
     
@@ -357,10 +407,120 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate {
         }
     }
     
-    private func goToMain() {
-        let mainVC = MainViewController()
-        mainVC.modalPresentationStyle = .fullScreen
-        self.present(mainVC, animated: true)
+    private func proceedToMain() {
+        // Prevent multiple calls
+        guard !hasProceededToMain else {
+            print("🚫 Already proceeding to main - preventing duplicate calls")
+            return
+        }
+        
+        hasProceededToMain = true
+        print("🚀 Proceeding to main app...")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            let mainVC = MainViewController()
+            mainVC.modalPresentationStyle = .fullScreen
+            mainVC.modalTransitionStyle = .crossDissolve
+            
+            self.present(mainVC, animated: true) {
+                // Clean up any references and dismiss this view controller
+                print("✅ MainViewController presented successfully")
+                self.dismiss(animated: false) {
+                    print("✅ PermissionViewController dismissed")
+                }
+            }
+        }
+    }
+    
+    private func checkAndRequestPermissions() {
+        // Prevent infinite loop
+        guard !hasProceededToMain else {
+            print("🚫 Already proceeded to main - preventing infinite loop")
+            return
+        }
+        
+        // Check if we're still the top view controller
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first,
+              let topViewController = window.rootViewController?.topMostViewController(),
+              topViewController == self else {
+            print("🚫 Not the top view controller - skipping")
+            return
+        }
+        
+        // Check if user previously deferred permissions
+        if didDeferPermissions {
+            print("⏭️ User previously deferred permissions - proceeding to main")
+            proceedToMain()
+            return
+        }
+        
+        // Check current permission status
+        let locationStatus = PermissionManager.shared.getPermissionStatus(for: .location)
+        let cameraStatus = PermissionManager.shared.getPermissionStatus(for: .camera)
+        let notificationStatus = PermissionManager.shared.getPermissionStatus(for: .notifications)
+        
+        print("🔍 Current permission status:")
+        print("   Location: \(locationStatus)")
+        print("   Camera: \(cameraStatus)")
+        print("   Notifications: \(notificationStatus)")
+        
+        // If all permissions are granted, proceed to main
+        if locationStatus == .granted && cameraStatus == .granted && notificationStatus == .granted {
+            print("🎉 All permissions already granted - proceeding to main app")
+            proceedToMain()
+            return
+        }
+        
+        // Show permission request UI
+        showPermissionRequestUI()
+    }
+    
+    private func showPermissionRequestUI() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Create and show the permission request UI
+            let alert = UIAlertController(
+                title: "Permissions Required",
+                message: "This app needs access to location, camera, and notifications to function properly.",
+                preferredStyle: .alert
+            )
+            
+            alert.addAction(UIAlertAction(title: "Grant Permissions", style: .default) { _ in
+                self.requestAllPermissions()
+            })
+            
+            alert.addAction(UIAlertAction(title: "Later", style: .cancel) { _ in
+                // User chose to skip permissions for now - set flag to prevent re-prompting
+                self.didDeferPermissions = true
+                print("⏭️ User chose 'Later' - setting deferred flag")
+                self.proceedToMain()
+            })
+            
+            self.present(alert, animated: true)
+        }
+    }
+}
+
+// MARK: - UIViewController Extension
+extension UIViewController {
+    func topMostViewController() -> UIViewController {
+        if let presented = presentedViewController {
+            return presented.topMostViewController()
+        }
+        
+        if let navigation = self as? UINavigationController {
+            return navigation.visibleViewController?.topMostViewController() ?? navigation
+        }
+        
+        if let tab = self as? UITabBarController {
+            return tab.selectedViewController?.topMostViewController() ?? tab
+        }
+        
+        return self
     }
 }
 

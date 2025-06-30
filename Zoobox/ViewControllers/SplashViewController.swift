@@ -14,7 +14,11 @@ class SplashViewController: UIViewController {
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        playVideo()
+        
+        // Ensure we're on the main thread and view is in hierarchy
+        DispatchQueue.main.async { [weak self] in
+            self?.playVideo()
+        }
     }
     
     private func setupVideoPlayer() {
@@ -84,19 +88,35 @@ class SplashViewController: UIViewController {
     }
     
     private func proceedToConnectivityCheck() {
-        DispatchQueue.main.async {
-            // Remove observer
-            NotificationCenter.default.removeObserver(self)
+        // Remove observer
+        NotificationCenter.default.removeObserver(self)
+        
+        // Clean up player first
+        self.player?.pause()
+        self.player = nil
+        self.playerViewController?.removeFromParent()
+        self.playerViewController = nil
+        
+        // Ensure we're on main thread and view is in hierarchy
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Check if we're still the top view controller
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let window = windowScene.windows.first,
+                  let topViewController = window.rootViewController?.topMostViewController(),
+                  topViewController == self else {
+                print("🚫 SplashViewController not top view controller - skipping navigation")
+                return
+            }
             
             // Navigate to ConnectivityViewController
             let connectivityVC = ConnectivityViewController()
             connectivityVC.modalPresentationStyle = .fullScreen
+            connectivityVC.modalTransitionStyle = .crossDissolve
+            
             self.present(connectivityVC, animated: true) {
-                // Clean up player
-                self.player?.pause()
-                self.player = nil
-                self.playerViewController?.removeFromParent()
-                self.playerViewController = nil
+                print("✅ ConnectivityViewController presented successfully")
             }
         }
     }
