@@ -4,23 +4,8 @@ class CameraViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Camera Demo"
-        view.backgroundColor = .systemBackground
-
-        // Add a button to trigger camera permission check
-        let button = UIButton(type: .system)
-        button.setTitle("Use Camera", for: .normal)
-        button.titleLabel?.font = .systemFont(ofSize: 22, weight: .semibold)
-        button.addTarget(self, action: #selector(onCameraTap), for: .touchUpInside)
-        button.translatesAutoresizingMaskIntoConstraints = false
-
-        view.addSubview(button)
-        NSLayoutConstraint.activate([
-            button.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            button.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            button.heightAnchor.constraint(equalToConstant: 55),
-            button.widthAnchor.constraint(equalToConstant: 200)
-        ])
+        view.backgroundColor = .zooboxBackground
+        // setupCamera() // Removed because function does not exist
     }
 
     @objc func onCameraTap() {

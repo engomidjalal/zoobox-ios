@@ -23,14 +23,8 @@ class WelcomeViewController: UIViewController {
     
     // MARK: - UI Setup
     private func setupUI() {
-        // Setup gradient background
-        backgroundGradientLayer.colors = [
-            UIColor(red: 52/255, green: 152/255, blue: 219/255, alpha: 1).cgColor,
-            UIColor(red: 155/255, green: 89/255, blue: 182/255, alpha: 1).cgColor
-        ]
-        backgroundGradientLayer.startPoint = CGPoint(x: 0, y: 0)
-        backgroundGradientLayer.endPoint = CGPoint(x: 1, y: 1)
-        view.layer.insertSublayer(backgroundGradientLayer, at: 0)
+        // Setup white background instead of gradient
+        view.backgroundColor = .zooboxBackground
         
         // Setup logo
         logoImageView.image = UIImage(named: "AppIcon") // Use app icon or create a custom logo
@@ -39,31 +33,31 @@ class WelcomeViewController: UIViewController {
         logoImageView.clipsToBounds = true
         view.addSubview(logoImageView)
         
-        // Setup title
+        // Setup title with red color
         titleLabel.text = "Welcome to Zoobox"
         titleLabel.font = UIFont.systemFont(ofSize: 32, weight: .bold)
-        titleLabel.textColor = .white
+        titleLabel.textColor = .zooboxRed
         titleLabel.textAlignment = .center
         view.addSubview(titleLabel)
         
-        // Setup subtitle
+        // Setup subtitle with red color
         subtitleLabel.text = "Your all-in-one delivery companion"
         subtitleLabel.font = UIFont.systemFont(ofSize: 18, weight: .medium)
-        subtitleLabel.textColor = .white.withAlphaComponent(0.9)
+        subtitleLabel.textColor = .zooboxRed.withAlphaComponent(0.8)
         subtitleLabel.textAlignment = .center
         subtitleLabel.numberOfLines = 0
         view.addSubview(subtitleLabel)
         
-        // Setup get started button
+        // Setup get started button with red background and white text
         getStartedButton.setTitle("Get Started", for: .normal)
-        getStartedButton.setTitleColor(UIColor(red: 52/255, green: 152/255, blue: 219/255, alpha: 1), for: .normal)
+        getStartedButton.setTitleColor(.zooboxTextLight, for: .normal)
         getStartedButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
-        getStartedButton.backgroundColor = .white
+        getStartedButton.backgroundColor = .zooboxRed
         getStartedButton.layer.cornerRadius = 25
-        getStartedButton.layer.shadowColor = UIColor.black.cgColor
+        getStartedButton.layer.shadowColor = UIColor.zooboxRed.cgColor
         getStartedButton.layer.shadowOffset = CGSize(width: 0, height: 4)
         getStartedButton.layer.shadowRadius = 12
-        getStartedButton.layer.shadowOpacity = 0.2
+        getStartedButton.layer.shadowOpacity = 0.3
         getStartedButton.addTarget(self, action: #selector(getStartedButtonTapped), for: .touchUpInside)
         view.addSubview(getStartedButton)
     }

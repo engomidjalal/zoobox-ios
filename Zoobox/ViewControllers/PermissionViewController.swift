@@ -31,7 +31,7 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate, Per
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .white
+        view.backgroundColor = .zooboxBackground
         setupUI()
         
         // Setup managers
@@ -64,13 +64,29 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate, Per
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
         ])
+        
+        // Add debug button
+        let debugButton = UIButton(type: .system)
+        debugButton.setTitle("Debug: Request All Permissions", for: .normal)
+        debugButton.backgroundColor = UIColor.zooboxRed
+        debugButton.setTitleColor(.zooboxTextLight, for: .normal)
+        debugButton.layer.cornerRadius = 12
+        debugButton.addTarget(self, action: #selector(debugButtonTapped), for: .touchUpInside)
+        view.addSubview(debugButton)
+        
+        NSLayoutConstraint.activate([
+            debugButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 50),
+            debugButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            debugButton.heightAnchor.constraint(equalToConstant: 50),
+            debugButton.widthAnchor.constraint(equalToConstant: 200)
+        ])
     }
     
     // 🔍 DEBUG: Add debug button for testing
     private func setupDebugButton() {
         let debugButton = UIButton(type: .system)
         debugButton.setTitle("Debug Permissions", for: .normal)
-        debugButton.backgroundColor = UIColor.systemBlue
+        debugButton.backgroundColor = UIColor.zooboxRed
         debugButton.setTitleColor(.white, for: .normal)
         debugButton.layer.cornerRadius = 8
         debugButton.addTarget(self, action: #selector(debugButtonTapped), for: .touchUpInside)

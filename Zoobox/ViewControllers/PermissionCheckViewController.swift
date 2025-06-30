@@ -10,12 +10,13 @@ class PermissionCheckViewController: UIViewController {
         label.font = UIFont.systemFont(ofSize: 24, weight: .bold)
         label.textAlignment = .center
         label.numberOfLines = 0
+        label.textColor = .zooboxRed
         return label
     }()
     
     private let activityIndicator: UIActivityIndicatorView = {
         let indicator = UIActivityIndicatorView(style: .large)
-        indicator.color = .systemBlue
+        indicator.color = .zooboxRed
         indicator.startAnimating()
         return indicator
     }()
@@ -26,13 +27,13 @@ class PermissionCheckViewController: UIViewController {
         label.font = UIFont.systemFont(ofSize: 16, weight: .medium)
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.textColor = .systemGray
+        label.textColor = .zooboxRed.withAlphaComponent(0.8)
         return label
     }()
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 0/255, green: 119/255, blue: 182/255, alpha: 1)
+        view.backgroundColor = UIColor.zooboxBackground
         setupUI()
     }
     

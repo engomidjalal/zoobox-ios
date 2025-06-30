@@ -15,13 +15,13 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate, C
         label.font = UIFont.systemFont(ofSize: 24, weight: .bold)
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.textColor = .white
+        label.textColor = .zooboxRed
         return label
     }()
     
     private let activityIndicator: UIActivityIndicatorView = {
         let indicator = UIActivityIndicatorView(style: .large)
-        indicator.color = .white
+        indicator.color = .zooboxRed
         indicator.startAnimating()
         return indicator
     }()
@@ -29,8 +29,8 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate, C
     private let gpsButton: UIButton = {
         let button = UIButton(type: .system)
         button.setTitle("Enable GPS", for: .normal)
-        button.setTitleColor(.white, for: .normal)
-        button.backgroundColor = UIColor.systemBlue
+        button.setTitleColor(.zooboxTextLight, for: .normal)
+        button.backgroundColor = UIColor.zooboxRed
         button.layer.cornerRadius = 12
         button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         button.isHidden = true
@@ -40,8 +40,8 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate, C
     private let internetButton: UIButton = {
         let button = UIButton(type: .system)
         button.setTitle("Enable Internet", for: .normal)
-        button.setTitleColor(.white, for: .normal)
-        button.backgroundColor = UIColor.systemBlue
+        button.setTitleColor(.zooboxTextLight, for: .normal)
+        button.backgroundColor = UIColor.zooboxRed
         button.layer.cornerRadius = 12
         button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         button.isHidden = true
@@ -51,8 +51,8 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate, C
     private let retryButton: UIButton = {
         let button = UIButton(type: .system)
         button.setTitle("Retry", for: .normal)
-        button.setTitleColor(.white, for: .normal)
-        button.backgroundColor = UIColor.systemGreen
+        button.setTitleColor(.zooboxTextLight, for: .normal)
+        button.backgroundColor = UIColor.zooboxRed
         button.layer.cornerRadius = 12
         button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         button.isHidden = true
@@ -69,7 +69,7 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate, C
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 0/255, green: 119/255, blue: 182/255, alpha: 1) // Match Android splash color
+        view.backgroundColor = UIColor.zooboxBackground // White background instead of red
         setupUI()
         setupButtons()
         setupConnectivityManager()

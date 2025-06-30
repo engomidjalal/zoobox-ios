@@ -12,6 +12,7 @@ class SimplePermissionRequestViewController: UIViewController {
         label.font = UIFont.systemFont(ofSize: 28, weight: .bold)
         label.textAlignment = .center
         label.numberOfLines = 0
+        label.textColor = .zooboxRed
         return label
     }()
     
@@ -21,7 +22,7 @@ class SimplePermissionRequestViewController: UIViewController {
         label.font = UIFont.systemFont(ofSize: 16, weight: .regular)
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.textColor = .systemGray
+        label.textColor = .zooboxRed.withAlphaComponent(0.8)
         return label
     }()
     
@@ -31,6 +32,7 @@ class SimplePermissionRequestViewController: UIViewController {
         label.font = UIFont.systemFont(ofSize: 20, weight: .semibold)
         label.textAlignment = .center
         label.numberOfLines = 0
+        label.textColor = .zooboxRed
         return label
     }()
     
@@ -40,7 +42,7 @@ class SimplePermissionRequestViewController: UIViewController {
         label.font = UIFont.systemFont(ofSize: 14, weight: .regular)
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.textColor = .systemGray
+        label.textColor = .zooboxRed.withAlphaComponent(0.7)
         return label
     }()
     
@@ -48,8 +50,8 @@ class SimplePermissionRequestViewController: UIViewController {
         let button = UIButton(type: .system)
         button.setTitle("Enable Permission", for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
-        button.backgroundColor = .systemBlue
-        button.setTitleColor(.white, for: .normal)
+        button.backgroundColor = .zooboxButtonPrimary
+        button.setTitleColor(.zooboxTextLight, for: .normal)
         button.layer.cornerRadius = 12
         button.addTarget(self, action: #selector(enableButtonTapped), for: .touchUpInside)
         return button
@@ -59,15 +61,15 @@ class SimplePermissionRequestViewController: UIViewController {
         let button = UIButton(type: .system)
         button.setTitle("Skip for Now", for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
-        button.setTitleColor(.systemGray, for: .normal)
+        button.setTitleColor(.zooboxRed, for: .normal)
         button.addTarget(self, action: #selector(skipButtonTapped), for: .touchUpInside)
         return button
     }()
     
     private let progressView: UIProgressView = {
         let progress = UIProgressView(progressViewStyle: .default)
-        progress.progressTintColor = .systemBlue
-        progress.trackTintColor = .systemGray5
+        progress.progressTintColor = .zooboxRed
+        progress.trackTintColor = .zooboxRed.withAlphaComponent(0.2)
         return progress
     }()
     
@@ -82,7 +84,7 @@ class SimplePermissionRequestViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .white
+        view.backgroundColor = .zooboxBackground
         setupUI()
         updatePermissionDisplay()
     }

@@ -100,7 +100,7 @@ class ErrorViewController: UIViewController {
     
     private let containerView: UIView = {
         let view = UIView()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .zooboxBackground
         view.layer.cornerRadius = 16
         view.layer.shadowColor = UIColor.black.cgColor
         view.layer.shadowOffset = CGSize(width: 0, height: 2)
@@ -112,7 +112,7 @@ class ErrorViewController: UIViewController {
     private let iconImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
-        imageView.tintColor = .systemRed
+        imageView.tintColor = .zooboxError
         return imageView
     }()
     
@@ -121,7 +121,7 @@ class ErrorViewController: UIViewController {
         label.font = UIFont.systemFont(ofSize: 24, weight: .bold)
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.textColor = .label
+        label.textColor = .zooboxTextPrimary
         return label
     }()
     
@@ -130,17 +130,17 @@ class ErrorViewController: UIViewController {
         label.font = UIFont.systemFont(ofSize: 16, weight: .regular)
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.textColor = .secondaryLabel
+        label.textColor = .zooboxTextSecondary
         return label
     }()
     
     private let primaryButton: UIButton = {
         let button = UIButton(type: .system)
-        button.backgroundColor = .systemBlue
-        button.setTitleColor(.white, for: .normal)
+        button.backgroundColor = .zooboxButtonPrimary
+        button.setTitleColor(.zooboxTextLight, for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
         button.layer.cornerRadius = 12
-        button.layer.shadowColor = UIColor.systemBlue.cgColor
+        button.layer.shadowColor = UIColor.zooboxRed.cgColor
         button.layer.shadowOffset = CGSize(width: 0, height: 2)
         button.layer.shadowRadius = 4
         button.layer.shadowOpacity = 0.3
@@ -149,8 +149,8 @@ class ErrorViewController: UIViewController {
     
     private let secondaryButton: UIButton = {
         let button = UIButton(type: .system)
-        button.backgroundColor = .systemGray5
-        button.setTitleColor(.label, for: .normal)
+        button.backgroundColor = .zooboxButtonSecondary
+        button.setTitleColor(.zooboxTextPrimary, for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
         button.layer.cornerRadius = 12
         return button
@@ -187,7 +187,7 @@ class ErrorViewController: UIViewController {
     // MARK: - Setup
     
     private func setupUI() {
-        view.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.95)
+        view.backgroundColor = UIColor.zooboxBackground.withAlphaComponent(0.95)
         
         // Add blur effect
         let blurEffect = UIBlurEffect(style: .systemMaterial)

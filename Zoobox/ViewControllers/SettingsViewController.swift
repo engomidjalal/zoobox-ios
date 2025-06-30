@@ -18,7 +18,7 @@ class SettingsViewController: UIViewController {
     
     private let tableView: UITableView = {
         let table = UITableView(frame: .zero, style: .insetGrouped)
-        table.backgroundColor = .systemGroupedBackground
+        table.backgroundColor = .zooboxBackground
         return table
     }()
     
@@ -57,7 +57,7 @@ class SettingsViewController: UIViewController {
     
     private func setupUI() {
         title = "Settings"
-        view.backgroundColor = .systemGroupedBackground
+        view.backgroundColor = .zooboxBackground
         
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .done,

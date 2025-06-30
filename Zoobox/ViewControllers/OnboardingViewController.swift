@@ -14,27 +14,27 @@ class OnboardingViewController: UIViewController {
     private let permissionStackView = UIStackView()
     
     // MARK: - Data
-    private let permissions = [
+    private let permissions: [PermissionItem] = [
         PermissionItem(
             type: .location,
             title: "Location Access",
-            subtitle: "Find nearby services and enable deliveries",
+            subtitle: "Enable location services to get accurate delivery tracking and nearby services",
             icon: "📍",
-            color: UIColor(red: 52/255, green: 152/255, blue: 219/255, alpha: 1)
+            color: UIColor.zooboxRed
         ),
         PermissionItem(
             type: .camera,
-            title: "Camera Access", 
-            subtitle: "Scan QR codes and upload documents",
+            title: "Camera Access",
+            subtitle: "Allow camera access to scan QR codes and take photos for deliveries",
             icon: "📷",
-            color: UIColor(red: 46/255, green: 204/255, blue: 113/255, alpha: 1)
+            color: UIColor.zooboxRedLight
         ),
         PermissionItem(
             type: .notifications,
             title: "Notifications",
-            subtitle: "Get updates about orders and deliveries",
+            subtitle: "Stay updated with delivery status, offers, and important updates",
             icon: "🔔",
-            color: UIColor(red: 155/255, green: 89/255, blue: 182/255, alpha: 1)
+            color: UIColor.zooboxRedDark
         )
     ]
     
@@ -63,7 +63,7 @@ class OnboardingViewController: UIViewController {
     
     // MARK: - UI Setup
     private func setupUI() {
-        view.backgroundColor = UIColor(red: 248/255, green: 249/255, blue: 250/255, alpha: 1)
+        view.backgroundColor = UIColor.zooboxBackground // Pure white background
         
         // Setup scroll view
         scrollView.isPagingEnabled = true
@@ -77,7 +77,7 @@ class OnboardingViewController: UIViewController {
         // Setup page control
         pageControl.numberOfPages = permissions.count
         pageControl.currentPage = 0
-        pageControl.pageIndicatorTintColor = UIColor.lightGray.withAlphaComponent(0.5)
+        pageControl.pageIndicatorTintColor = UIColor.zooboxRed.withAlphaComponent(0.3)
         pageControl.currentPageIndicatorTintColor = permissions[0].color
         pageControl.addTarget(self, action: #selector(pageControlChanged), for: .valueChanged)
         view.addSubview(pageControl)
@@ -92,7 +92,7 @@ class OnboardingViewController: UIViewController {
     private func setupButtons() {
         // Next button
         nextButton.setTitle("Next", for: .normal)
-        nextButton.setTitleColor(.white, for: .normal)
+        nextButton.setTitleColor(.zooboxTextLight, for: .normal)
         nextButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         nextButton.backgroundColor = permissions[0].color
         nextButton.layer.cornerRadius = 25
@@ -101,7 +101,7 @@ class OnboardingViewController: UIViewController {
         
         // Skip button
         skipButton.setTitle("Skip", for: .normal)
-        skipButton.setTitleColor(UIColor.gray, for: .normal)
+        skipButton.setTitleColor(.zooboxRed, for: .normal)
         skipButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
         skipButton.addTarget(self, action: #selector(skipButtonTapped), for: .touchUpInside)
         view.addSubview(skipButton)
@@ -121,7 +121,7 @@ class OnboardingViewController: UIViewController {
     
     private func createPermissionCard(for permission: PermissionItem, at index: Int) -> UIView {
         let cardView = UIView()
-        cardView.backgroundColor = .white
+        cardView.backgroundColor = .zooboxBackground
         cardView.layer.cornerRadius = 20
         cardView.layer.shadowColor = UIColor.black.cgColor
         cardView.layer.shadowOffset = CGSize(width: 0, height: 4)
@@ -144,7 +144,7 @@ class OnboardingViewController: UIViewController {
         let titleLabel = UILabel()
         titleLabel.text = permission.title
         titleLabel.font = UIFont.systemFont(ofSize: 24, weight: .bold)
-        titleLabel.textColor = .black
+        titleLabel.textColor = .zooboxTextPrimary
         titleLabel.textAlignment = .center
         cardView.addSubview(titleLabel)
         
@@ -152,21 +152,21 @@ class OnboardingViewController: UIViewController {
         let subtitleLabel = UILabel()
         subtitleLabel.text = permission.subtitle
         subtitleLabel.font = UIFont.systemFont(ofSize: 16, weight: .regular)
-        subtitleLabel.textColor = .gray
+        subtitleLabel.textColor = .zooboxTextSecondary
         subtitleLabel.textAlignment = .center
         subtitleLabel.numberOfLines = 0
         cardView.addSubview(subtitleLabel)
         
         // Status indicator
         let statusView = UIView()
-        statusView.backgroundColor = UIColor.lightGray.withAlphaComponent(0.3)
+        statusView.backgroundColor = UIColor.zooboxTextSecondary.withAlphaComponent(0.3)
         statusView.layer.cornerRadius = 15
         cardView.addSubview(statusView)
         
         let statusLabel = UILabel()
         statusLabel.text = "Tap to enable"
         statusLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
-        statusLabel.textColor = .gray
+        statusLabel.textColor = .zooboxTextSecondary
         statusLabel.textAlignment = .center
         statusView.addSubview(statusLabel)
         
@@ -387,15 +387,15 @@ class OnboardingViewController: UIViewController {
             switch status {
             case .denied:
                 UIView.animate(withDuration: 0.3) {
-                    statusView.backgroundColor = UIColor.systemRed.withAlphaComponent(0.2)
+                    statusView.backgroundColor = UIColor.zooboxError.withAlphaComponent(0.2)
                     statusLabel.text = "✗ Denied"
-                    statusLabel.textColor = .systemRed
+                    statusLabel.textColor = .zooboxError
                 }
             case .notDetermined:
                 UIView.animate(withDuration: 0.3) {
-                    statusView.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.2)
+                    statusView.backgroundColor = UIColor.zooboxWarning.withAlphaComponent(0.2)
                     statusLabel.text = "⏳ Requesting..."
-                    statusLabel.textColor = .systemOrange
+                    statusLabel.textColor = .zooboxWarning
                 }
             default:
                 UIView.animate(withDuration: 0.3) {

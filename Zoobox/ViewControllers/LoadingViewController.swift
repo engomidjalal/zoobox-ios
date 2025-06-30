@@ -57,8 +57,8 @@ class LoadingViewController: UIViewController {
     
     private let progressView: UIProgressView = {
         let progress = UIProgressView(progressViewStyle: .default)
-        progress.progressTintColor = .systemBlue
-        progress.trackTintColor = .systemGray5
+        progress.progressTintColor = .zooboxRed
+        progress.trackTintColor = .zooboxButtonSecondary
         progress.layer.cornerRadius = 2
         progress.clipsToBounds = true
         return progress
@@ -69,7 +69,7 @@ class LoadingViewController: UIViewController {
         label.text = "0%"
         label.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         label.textAlignment = .center
-        label.textColor = .secondaryLabel
+        label.textColor = .zooboxTextSecondary
         return label
     }()
     
@@ -77,8 +77,8 @@ class LoadingViewController: UIViewController {
         let button = UIButton(type: .system)
         button.setTitle("Cancel", for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
-        button.setTitleColor(.systemRed, for: .normal)
-        button.backgroundColor = .systemGray6
+        button.setTitleColor(.zooboxError, for: .normal)
+        button.backgroundColor = .zooboxButtonSecondary
         button.layer.cornerRadius = 12
         return button
     }()
@@ -108,7 +108,7 @@ class LoadingViewController: UIViewController {
     // MARK: - Setup
     
     private func setupUI() {
-        view.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.95)
+        view.backgroundColor = UIColor.zooboxBackground.withAlphaComponent(0.95)
         
         // Add blur effect
         let blurEffect = UIBlurEffect(style: .systemMaterial)
@@ -253,7 +253,7 @@ class LoadingViewController: UIViewController {
             guard let self = self else { return }
             
             self.subtitleLabel.text = "Connection timeout"
-            self.subtitleLabel.textColor = .systemRed
+            self.subtitleLabel.textColor = .zooboxError
             
             // Show timeout message
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -273,7 +273,7 @@ class LoadingViewController: UIViewController {
             self.progressView.setProgress(1.0, animated: true)
             self.progressLabel.text = "100%"
             self.subtitleLabel.text = "Ready!"
-            self.subtitleLabel.textColor = .systemGreen
+            self.subtitleLabel.textColor = .zooboxSuccess
             
             // Dismiss after a short delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -298,7 +298,7 @@ class LoadingViewController: UIViewController {
             guard let self = self else { return }
             
             self.subtitleLabel.text = message
-            self.subtitleLabel.textColor = .systemRed
+            self.subtitleLabel.textColor = .zooboxError
             self.cancelButton.setTitle("Retry", for: .normal)
         }
     }

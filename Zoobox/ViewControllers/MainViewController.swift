@@ -13,6 +13,10 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     private let mediumImpactFeedback = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactFeedback = UIImpactFeedbackGenerator(style: .heavy)
     
+    // MARK: - Pull to Refresh
+    private var refreshControl: UIRefreshControl!
+    private var scrollView: UIScrollView!
+    
     private var fileUploadCompletionHandler: (([URL]?) -> Void)?
     
     // Add flag to prevent multiple script injections
@@ -38,6 +42,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = .zooboxBackground
         setupLocationManager()
         setupPermissionManager()
         setupConnectivityManager()
@@ -153,13 +158,149 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         webView.configuration.allowsInlineMediaPlayback = true
         webView.configuration.mediaTypesRequiringUserActionForPlayback = []
         
-        view.addSubview(webView)
+        // Setup scroll view for pull-to-refresh
+        setupScrollViewWithRefreshControl()
+        
+        view.addSubview(scrollView)
+        let safeArea = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: view.topAnchor),
-            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+            scrollView.topAnchor.constraint(equalTo: safeArea.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: safeArea.trailingAnchor)
         ])
+    }
+    
+    // MARK: - Pull to Refresh Setup
+    private func setupScrollViewWithRefreshControl() {
+        // Create scroll view
+        scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.alwaysBounceVertical = true
+        scrollView.backgroundColor = .zooboxBackground
+        
+        // Create modern refresh control with red color
+        refreshControl = UIRefreshControl()
+        refreshControl.tintColor = .zooboxRed
+        refreshControl.attributedTitle = NSAttributedString(
+            string: "Pull to refresh",
+            attributes: [
+                .foregroundColor: UIColor.zooboxRed,
+                .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+            ]
+        )
+        
+        // Add refresh control to scroll view
+        scrollView.refreshControl = refreshControl
+        refreshControl.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
+        
+        // Update refresh control appearance
+        updateRefreshControlAppearance()
+        
+        // Add webview to scroll view
+        scrollView.addSubview(webView)
+        webView.backgroundColor = .zooboxBackground
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Make webview fill the entire scroll view
+        NSLayoutConstraint.activate([
+            webView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            webView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            webView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            webView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+        ])
+    }
+    
+    @objc private func handleRefresh() {
+        // Provide haptic feedback
+        mediumImpactFeedback.impactOccurred()
+        
+        // Ensure spinner is red
+        refreshControl.tintColor = .zooboxRed
+        
+        // Update refresh control title
+        refreshControl.attributedTitle = NSAttributedString(
+            string: "Refreshing...",
+            attributes: [
+                .foregroundColor: UIColor.zooboxRed,
+                .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+            ]
+        )
+        
+        // Reload the webview
+        if let currentURL = webView.url {
+            let request = URLRequest(url: currentURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+            webView.load(request)
+        } else {
+            loadMainSite()
+        }
+        
+        // Hide error if showing
+        hideError()
+        
+        // Reset retry count
+        resetRetryCount()
+    }
+    
+    // MARK: - Enhanced Pull to Refresh Features
+    
+    private func updateRefreshControlAppearance() {
+        // Update refresh control with modern styling - red spinner
+        refreshControl.tintColor = .zooboxRed
+    }
+    
+    private func showRefreshSuccess() {
+        // Provide success feedback
+        lightImpactFeedback.impactOccurred()
+        
+        // Update refresh control title briefly
+        refreshControl.attributedTitle = NSAttributedString(
+            string: "Refreshed successfully",
+            attributes: [
+                .foregroundColor: UIColor.systemGreen,
+                .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+            ]
+        )
+        
+        // Reset title after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.refreshControl.attributedTitle = NSAttributedString(
+                string: "Pull to refresh",
+                attributes: [
+                    .foregroundColor: UIColor.secondaryLabel,
+                    .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+                ]
+            )
+        }
+    }
+    
+    private func showRefreshError() {
+        // Provide error feedback
+        heavyImpactFeedback.impactOccurred()
+        
+        // Update refresh control title
+        refreshControl.attributedTitle = NSAttributedString(
+            string: "Refresh failed",
+            attributes: [
+                .foregroundColor: UIColor.systemRed,
+                .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+            ]
+        )
+        
+        // Reset title after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.refreshControl.attributedTitle = NSAttributedString(
+                string: "Pull to refresh",
+                attributes: [
+                    .foregroundColor: UIColor.secondaryLabel,
+                    .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+                ]
+            )
+        }
     }
     
     private func prepareHapticFeedback() {
@@ -463,6 +604,24 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         stopLoading()
         mediumImpactFeedback.impactOccurred()
+        
+        // Stop refresh control
+        refreshControl.endRefreshing()
+        
+        // Show success feedback if this was a refresh
+        if refreshControl.isRefreshing {
+            showRefreshSuccess()
+        } else {
+            // Reset refresh control title
+            refreshControl.attributedTitle = NSAttributedString(
+                string: "Pull to refresh",
+                attributes: [
+                    .foregroundColor: UIColor.secondaryLabel,
+                    .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+                ]
+            )
+        }
+        
         // Cache the page
         offlineContentManager.cacheCurrentPage(webView)
         // Inject permissions to WebView
@@ -812,12 +971,48 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         stopLoading()
         heavyImpactFeedback.impactOccurred()
+        
+        // Stop refresh control
+        refreshControl.endRefreshing()
+        
+        // Show error feedback if this was a refresh
+        if refreshControl.isRefreshing {
+            showRefreshError()
+        } else {
+            // Reset refresh control title
+            refreshControl.attributedTitle = NSAttributedString(
+                string: "Pull to refresh",
+                attributes: [
+                    .foregroundColor: UIColor.secondaryLabel,
+                    .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+                ]
+            )
+        }
+        
         handleWebViewError(error)
     }
     
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         stopLoading()
         heavyImpactFeedback.impactOccurred()
+        
+        // Stop refresh control
+        refreshControl.endRefreshing()
+        
+        // Show error feedback if this was a refresh
+        if refreshControl.isRefreshing {
+            showRefreshError()
+        } else {
+            // Reset refresh control title
+            refreshControl.attributedTitle = NSAttributedString(
+                string: "Pull to refresh",
+                attributes: [
+                    .foregroundColor: UIColor.secondaryLabel,
+                    .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+                ]
+            )
+        }
+        
         handleWebViewError(error)
     }
     
@@ -1029,6 +1224,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             
             switch status {
             case .connected:
+                // Update refresh control for connected state
+                self.updateRefreshControlForConnectivity(true)
+                
                 // Dismiss any connectivity alert if it exists
                 if let alert = self.connectivityAlert {
                     alert.dismiss(animated: true) {
@@ -1050,6 +1248,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
                 print("📡 Internet connection restored - auto-reloading")
                 
             case .disconnected:
+                // Update refresh control for disconnected state
+                self.updateRefreshControlForConnectivity(false)
+                
                 // Show connectivity alert if not already showing
                 if self.connectivityAlert == nil {
                     self.showConnectivityAlert()
@@ -1303,6 +1504,38 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             guard let self = self else { return }
             
             self.showSimpleNoInternetDialog()
+        }
+    }
+    
+    // MARK: - Programmatic Refresh
+    
+    func triggerRefresh() {
+        // Programmatically trigger refresh
+        refreshControl.beginRefreshing()
+        handleRefresh()
+    }
+    
+    // MARK: - Refresh Control State Management
+    
+    private func updateRefreshControlForConnectivity(_ isConnected: Bool) {
+        if !isConnected {
+            refreshControl.attributedTitle = NSAttributedString(
+                string: "No internet connection",
+                attributes: [
+                    .foregroundColor: UIColor.systemOrange,
+                    .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+                ]
+            )
+            refreshControl.isEnabled = false
+        } else {
+            refreshControl.attributedTitle = NSAttributedString(
+                string: "Pull to refresh",
+                attributes: [
+                    .foregroundColor: UIColor.secondaryLabel,
+                    .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+                ]
+            )
+            refreshControl.isEnabled = true
         }
     }
 }

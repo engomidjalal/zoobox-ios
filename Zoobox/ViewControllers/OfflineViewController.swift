@@ -31,7 +31,7 @@ class OfflineViewController: UIViewController {
         let imageView = UIImageView()
         imageView.image = UIImage(systemName: "wifi.slash")
         imageView.contentMode = .scaleAspectFit
-        imageView.tintColor = .systemOrange
+        imageView.tintColor = .zooboxError
         return imageView
     }()
     
@@ -40,30 +40,34 @@ class OfflineViewController: UIViewController {
         label.text = "You're Offline"
         label.font = UIFont.systemFont(ofSize: 28, weight: .bold)
         label.textAlignment = .center
-        label.textColor = .label
+        label.numberOfLines = 0
+        label.textColor = .zooboxTextPrimary
         return label
     }()
     
     private let subtitleLabel: UILabel = {
         let label = UILabel()
-        label.text = "Check your internet connection"
-        label.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        label.text = "Don't worry! You can still access some features and cached content while offline."
+        label.font = UIFont.systemFont(ofSize: 16, weight: .regular)
         label.textAlignment = .center
-        label.textColor = .secondaryLabel
+        label.numberOfLines = 0
+        label.textColor = .zooboxTextSecondary
         return label
     }()
     
     private let statusCard: UIView = {
         let view = UIView()
-        view.backgroundColor = .systemGray6
+        view.backgroundColor = .zooboxButtonSecondary
         view.layer.cornerRadius = 12
+        view.layer.borderWidth = 1
+        view.layer.borderColor = UIColor.zooboxTextSecondary.withAlphaComponent(0.2).cgColor
         return view
     }()
     
     private let statusLabel: UILabel = {
         let label = UILabel()
         label.font = UIFont.systemFont(ofSize: 14, weight: .medium)
-        label.textColor = .secondaryLabel
+        label.textColor = .zooboxTextSecondary
         label.numberOfLines = 0
         return label
     }()
@@ -72,8 +76,8 @@ class OfflineViewController: UIViewController {
         let button = UIButton(type: .system)
         button.setTitle("Try Again", for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
-        button.backgroundColor = .systemBlue
-        button.setTitleColor(.white, for: .normal)
+        button.backgroundColor = .zooboxButtonPrimary
+        button.setTitleColor(.zooboxTextLight, for: .normal)
         button.layer.cornerRadius = 12
         return button
     }()
@@ -82,8 +86,8 @@ class OfflineViewController: UIViewController {
         let button = UIButton(type: .system)
         button.setTitle("Check Settings", for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
-        button.backgroundColor = .systemGray5
-        button.setTitleColor(.label, for: .normal)
+        button.backgroundColor = .zooboxButtonSecondary
+        button.setTitleColor(.zooboxTextPrimary, for: .normal)
         button.layer.cornerRadius = 12
         return button
     }()
@@ -92,8 +96,8 @@ class OfflineViewController: UIViewController {
         let button = UIButton(type: .system)
         button.setTitle("Offline Mode", for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
-        button.backgroundColor = .systemGreen
-        button.setTitleColor(.white, for: .normal)
+        button.backgroundColor = .zooboxSuccess
+        button.setTitleColor(.zooboxTextLight, for: .normal)
         button.layer.cornerRadius = 12
         button.isHidden = true
         return button
@@ -101,10 +105,10 @@ class OfflineViewController: UIViewController {
     
     private let cacheInfoView: UIView = {
         let view = UIView()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .zooboxBackground
         view.layer.cornerRadius = 12
         view.layer.borderWidth = 1
-        view.layer.borderColor = UIColor.systemGray4.cgColor
+        view.layer.borderColor = UIColor.zooboxTextSecondary.withAlphaComponent(0.3).cgColor
         view.isHidden = true
         return view
     }()
@@ -113,7 +117,7 @@ class OfflineViewController: UIViewController {
         let label = UILabel()
         label.text = "Cached Content"
         label.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
-        label.textColor = .label
+        label.textColor = .zooboxTextPrimary
         return label
     }()
     
@@ -121,7 +125,7 @@ class OfflineViewController: UIViewController {
         let label = UILabel()
         label.text = "You have cached content available for offline viewing"
         label.font = UIFont.systemFont(ofSize: 14, weight: .regular)
-        label.textColor = .secondaryLabel
+        label.textColor = .zooboxTextSecondary
         label.numberOfLines = 0
         return label
     }()
@@ -130,7 +134,7 @@ class OfflineViewController: UIViewController {
         let button = UIButton(type: .system)
         button.setTitle("Clear Cache", for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
-        button.setTitleColor(.systemRed, for: .normal)
+        button.setTitleColor(.zooboxError, for: .normal)
         return button
     }()
     
@@ -160,7 +164,7 @@ class OfflineViewController: UIViewController {
     // MARK: - Setup
     
     private func setupUI() {
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .zooboxBackground
         
         view.addSubview(scrollView)
         scrollView.addSubview(contentView)
@@ -328,13 +332,13 @@ class OfflineViewController: UIViewController {
         switch status {
         case .connected:
             statusLabel.text = "✅ Internet connection detected"
-            statusLabel.textColor = .systemGreen
+            statusLabel.textColor = .zooboxSuccess
         case .disconnected:
             statusLabel.text = "❌ No internet connection available"
-            statusLabel.textColor = .systemRed
+            statusLabel.textColor = .zooboxError
         case .checking:
             statusLabel.text = "🔄 Checking connection..."
-            statusLabel.textColor = .systemOrange
+            statusLabel.textColor = .zooboxWarning
         case .unknown:
             statusLabel.text = "❓ Connection status unknown"
             statusLabel.textColor = .systemGray

@@ -102,7 +102,7 @@ class OfflineContentManager: NSObject {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                     margin: 0;
                     padding: 20px;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background: linear-gradient(135deg, #dc3545 0%, #b71c1c 100%);
                     min-height: 100vh;
                     display: flex;
                     align-items: center;
@@ -133,7 +133,7 @@ class OfflineContentManager: NSObject {
                     line-height: 1.6;
                 }
                 .button {
-                    background: #007AFF;
+                    background: #dc3545;
                     color: white;
                     border: none;
                     padding: 15px 30px;
@@ -145,25 +145,25 @@ class OfflineContentManager: NSObject {
                     transition: all 0.3s ease;
                 }
                 .button:hover {
-                    background: #0056CC;
+                    background: #b71c1c;
                     transform: translateY(-2px);
                 }
                 .button.secondary {
-                    background: #F2F2F7;
+                    background: #f8f9fa;
                     color: #333;
                 }
                 .button.secondary:hover {
-                    background: #E5E5EA;
+                    background: #e9ecef;
                 }
                 .cached-content {
                     margin-top: 30px;
                     padding: 20px;
-                    background: #F8F9FA;
+                    background: #f8f9fa;
                     border-radius: 12px;
-                    border-left: 4px solid #28A745;
+                    border-left: 4px solid #28a745;
                 }
                 .cached-content h3 {
-                    color: #28A745;
+                    color: #28a745;
                     margin-bottom: 10px;
                 }
             </style>

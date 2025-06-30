@@ -23,7 +23,7 @@ class SplashViewController: UIViewController {
     
     private func setupVideoPlayer() {
         // Set background color to white (matching Android app)
-        view.backgroundColor = .white
+        view.backgroundColor = .zooboxBackground
         
         // Get the video file path
         guard let videoPath = Bundle.main.path(forResource: "splash", ofType: "mp4") else {
