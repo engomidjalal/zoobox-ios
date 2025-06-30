@@ -26,6 +26,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         application.registerForRemoteNotifications()
         // Set FCM messaging delegate
         Messaging.messaging().delegate = self
+        
+        // Initialize connectivity monitoring
+        setupConnectivityMonitoring()
+        
         return true
     }
 
@@ -44,6 +48,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         print("Failed to register for remote notifications: \(error)")
+    }
+
+    private func setupConnectivityMonitoring() {
+        // Initialize the connectivity manager to start monitoring
+        let connectivityManager = ConnectivityManager.shared
+        print("📡 AppDelegate: Connectivity monitoring initialized")
     }
 }
 

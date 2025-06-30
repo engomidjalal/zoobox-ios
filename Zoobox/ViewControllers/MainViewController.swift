@@ -3,10 +3,11 @@ import WebKit
 import CoreLocation
 import MobileCoreServices
 
-class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, LocationManagerDelegate, PermissionManagerDelegate {
+class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, LocationManagerDelegate, PermissionManagerDelegate, ConnectivityManagerDelegate {
     var webView: WKWebView!
     private let locationManager = LocationManager.shared
     private let permissionManager = PermissionManager.shared
+    private let connectivityManager = ConnectivityManager.shared
     private let lightImpactFeedback = UIImpactFeedbackGenerator(style: .light)
     private let mediumImpactFeedback = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactFeedback = UIImpactFeedbackGenerator(style: .heavy)
@@ -16,13 +17,31 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     // Add flag to prevent multiple script injections
     private var hasInjectedPermissionScript = false
     
+    // Connectivity monitoring
+    private var connectivityAlert: UIAlertController?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         setupLocationManager()
         setupPermissionManager()
+        setupConnectivityManager()
         setupWebView()
         loadMainSite()
         prepareHapticFeedback()
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        // Start monitoring connectivity
+        connectivityManager.startMonitoring()
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        
+        // Stop monitoring when leaving this view
+        connectivityManager.stopMonitoring()
     }
     
     private func setupLocationManager() {
@@ -33,6 +52,10 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     private func setupPermissionManager() {
         permissionManager.delegate = self
+    }
+    
+    private func setupConnectivityManager() {
+        connectivityManager.delegate = self
     }
     
     private func setupWebView() {
@@ -883,6 +906,95 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         
+        present(alert, animated: true)
+    }
+    
+    // MARK: - ConnectivityManagerDelegate
+    
+    func connectivityManager(_ manager: ConnectivityManager, didUpdateConnectivityStatus status: ConnectivityStatus) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            switch status {
+            case .connected:
+                // Dismiss any connectivity alert if it exists
+                if let alert = self.connectivityAlert {
+                    alert.dismiss(animated: true) {
+                        self.connectivityAlert = nil
+                    }
+                }
+                print("📡 Internet connection restored")
+                
+            case .disconnected:
+                // Show connectivity alert if not already showing
+                if self.connectivityAlert == nil {
+                    self.showConnectivityAlert()
+                }
+                print("📡 Internet connection lost")
+                
+            case .checking, .unknown:
+                break
+            }
+        }
+    }
+    
+    func connectivityManager(_ manager: ConnectivityManager, didUpdateGPSStatus enabled: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            if !enabled {
+                // Show GPS alert if disabled
+                self.showGPSAlert()
+            } else {
+                // Dismiss GPS alert if it exists
+                if let alert = self.connectivityAlert, alert.title?.contains("GPS") == true {
+                    alert.dismiss(animated: true) {
+                        self.connectivityAlert = nil
+                    }
+                }
+            }
+        }
+    }
+    
+    private func showConnectivityAlert() {
+        let alert = UIAlertController(
+            title: "No Internet Connection",
+            message: "Please check your Wi-Fi or cellular data connection.",
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "Settings", style: .default) { _ in
+            if let url = URL(string: "App-Prefs:root=WIFI") {
+                UIApplication.shared.open(url)
+            } else if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        })
+        
+        alert.addAction(UIAlertAction(title: "Retry", style: .cancel) { _ in
+            self.connectivityManager.checkConnectivity()
+        })
+        
+        connectivityAlert = alert
+        present(alert, animated: true)
+    }
+    
+    private func showGPSAlert() {
+        let alert = UIAlertController(
+            title: "GPS Disabled",
+            message: "Location services are required for this app to function properly.",
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "Settings", style: .default) { _ in
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        })
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        connectivityAlert = alert
         present(alert, animated: true)
     }
 }

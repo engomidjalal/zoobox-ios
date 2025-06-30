@@ -2,9 +2,10 @@ import UIKit
 import CoreLocation
 import SystemConfiguration
 
-class ConnectivityViewController: UIViewController, CLLocationManagerDelegate {
+class ConnectivityViewController: UIViewController, CLLocationManagerDelegate, ConnectivityManagerDelegate {
     
     private let locationManager = CLLocationManager()
+    private let connectivityManager = ConnectivityManager.shared
     private var isGpsEnabled = false
     private var isInternetConnected = false
     
@@ -14,20 +15,64 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate {
         label.font = UIFont.systemFont(ofSize: 24, weight: .bold)
         label.textAlignment = .center
         label.numberOfLines = 0
+        label.textColor = .white
         return label
     }()
     
     private let activityIndicator: UIActivityIndicatorView = {
         let indicator = UIActivityIndicatorView(style: .large)
-        indicator.color = .systemBlue
+        indicator.color = .white
         indicator.startAnimating()
         return indicator
+    }()
+    
+    private let gpsButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("Enable GPS", for: .normal)
+        button.setTitleColor(.white, for: .normal)
+        button.backgroundColor = UIColor.systemBlue
+        button.layer.cornerRadius = 12
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        button.isHidden = true
+        return button
+    }()
+    
+    private let internetButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("Enable Internet", for: .normal)
+        button.setTitleColor(.white, for: .normal)
+        button.backgroundColor = UIColor.systemBlue
+        button.layer.cornerRadius = 12
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        button.isHidden = true
+        return button
+    }()
+    
+    private let retryButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("Retry", for: .normal)
+        button.setTitleColor(.white, for: .normal)
+        button.backgroundColor = UIColor.systemGreen
+        button.layer.cornerRadius = 12
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        button.isHidden = true
+        return button
+    }()
+    
+    private let stackView: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 20
+        stack.alignment = .center
+        return stack
     }()
     
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = UIColor(red: 0/255, green: 119/255, blue: 182/255, alpha: 1) // Match Android splash color
         setupUI()
+        setupButtons()
+        setupConnectivityManager()
         
         locationManager.delegate = self
     }
@@ -35,40 +80,91 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
+        // Start monitoring connectivity
+        connectivityManager.startMonitoring()
+        
         // Ensure we're on the main thread and view is in hierarchy
         DispatchQueue.main.async { [weak self] in
             self?.checkConnectivity()
         }
     }
     
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        
+        // Stop monitoring when leaving this view
+        connectivityManager.stopMonitoring()
+    }
+    
     private func setupUI() {
-        view.addSubview(statusLabel)
-        view.addSubview(activityIndicator)
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stackView)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Add subviews to stack view
+        stackView.addArrangedSubview(statusLabel)
+        stackView.addArrangedSubview(activityIndicator)
+        stackView.addArrangedSubview(gpsButton)
+        stackView.addArrangedSubview(internetButton)
+        stackView.addArrangedSubview(retryButton)
         
         NSLayoutConstraint.activate([
-            statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            statusLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -40),
-            statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            stackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stackView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            stackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
             
-            activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            activityIndicator.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 24)
+            gpsButton.heightAnchor.constraint(equalToConstant: 50),
+            gpsButton.widthAnchor.constraint(equalTo: stackView.widthAnchor),
+            
+            internetButton.heightAnchor.constraint(equalToConstant: 50),
+            internetButton.widthAnchor.constraint(equalTo: stackView.widthAnchor),
+            
+            retryButton.heightAnchor.constraint(equalToConstant: 50),
+            retryButton.widthAnchor.constraint(equalTo: stackView.widthAnchor)
         ])
     }
     
+    private func setupButtons() {
+        gpsButton.addTarget(self, action: #selector(gpsButtonTapped), for: .touchUpInside)
+        internetButton.addTarget(self, action: #selector(internetButtonTapped), for: .touchUpInside)
+        retryButton.addTarget(self, action: #selector(retryButtonTapped), for: .touchUpInside)
+    }
+    
+    private func setupConnectivityManager() {
+        connectivityManager.delegate = self
+    }
+    
     private func checkConnectivity() {
-        isGpsEnabled = CLLocationManager.locationServicesEnabled()
-        isInternetConnected = isNetworkReachable()
+        // Reset UI state
+        activityIndicator.startAnimating()
+        gpsButton.isHidden = true
+        internetButton.isHidden = true
+        retryButton.isHidden = true
+        statusLabel.text = "Checking Connectivity..."
+        
+        // Check GPS and Internet using ConnectivityManager
+        let connectivity = connectivityManager.checkConnectivity()
+        isGpsEnabled = connectivity.isGPSEnabled
+        isInternetConnected = connectivity.isInternetConnected
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.updateUI()
+        }
+    }
+    
+    private func updateUI() {
+        activityIndicator.stopAnimating()
         
         if !isGpsEnabled {
-            // Request location services
+            // GPS is disabled
             statusLabel.text = "GPS is disabled.\nEnable location services to continue."
-            showSettingsAlert(message: "GPS is disabled. Please enable location services in Settings.")
+            gpsButton.isHidden = false
+            retryButton.isHidden = false
         } else if !isInternetConnected {
+            // Internet is not available
             statusLabel.text = "No Internet Connection.\nPlease enable Wi-Fi or cellular data."
-            showSettingsAlert(message: "Internet connection is not available. Please enable Wi-Fi or mobile data in Settings.")
+            internetButton.isHidden = false
+            retryButton.isHidden = false
         } else {
             // Everything is OK, proceed
             statusLabel.text = "Connectivity OK!\nProceeding..."
@@ -78,49 +174,86 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate {
         }
     }
     
-    // iOS doesn't allow programmatically enabling GPS or Internet, so we show instructions
-    private func showSettingsAlert(message: String) {
-        let alert = UIAlertController(title: "Connectivity Required", message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Settings", style: .default, handler: { _ in
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+    @objc private func gpsButtonTapped() {
+        // Open Location Settings
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url) { [weak self] _ in
+                // After returning from settings, check again
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self?.checkConnectivity()
+                }
             }
-        }))
-        alert.addAction(UIAlertAction(title: "Retry", style: .cancel, handler: { _ in
-            self.checkConnectivity()
-        }))
-        present(alert, animated: true)
+        }
+    }
+    
+    @objc private func internetButtonTapped() {
+        // Open Wi-Fi Settings
+        if let url = URL(string: "App-Prefs:root=WIFI") {
+            UIApplication.shared.open(url) { [weak self] _ in
+                // After returning from settings, check again
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self?.checkConnectivity()
+                }
+            }
+        } else {
+            // Fallback to general settings if Wi-Fi settings URL doesn't work
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url) { [weak self] _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self?.checkConnectivity()
+                    }
+                }
+            }
+        }
+    }
+    
+    @objc private func retryButtonTapped() {
+        checkConnectivity()
     }
     
     // MARK: - CLLocationManagerDelegate
     
     func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
         // Retry connectivity when location permission changes
-        checkConnectivity()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.checkConnectivity()
+        }
     }
     
-    // MARK: - Network Check
+    // MARK: - ConnectivityManagerDelegate
     
-    private func isNetworkReachable() -> Bool {
-        var zeroAddress = sockaddr_in()
-        zeroAddress.sin_len = UInt8(MemoryLayout.size(ofValue: zeroAddress))
-        zeroAddress.sin_family = sa_family_t(AF_INET)
-        
-        guard let defaultRouteReachability = withUnsafePointer(to: &zeroAddress, {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { zeroSockAddress in
-                SCNetworkReachabilityCreateWithAddress(nil, zeroSockAddress)
+    func connectivityManager(_ manager: ConnectivityManager, didUpdateConnectivityStatus status: ConnectivityStatus) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            switch status {
+            case .connected:
+                self.isInternetConnected = true
+                if self.isGpsEnabled {
+                    // Both GPS and Internet are now available
+                    self.updateUI()
+                }
+            case .disconnected:
+                self.isInternetConnected = false
+                self.updateUI()
+            case .checking, .unknown:
+                break
             }
-        }) else {
-            return false
         }
-        
-        var flags: SCNetworkReachabilityFlags = []
-        if !SCNetworkReachabilityGetFlags(defaultRouteReachability, &flags) {
-            return false
+    }
+    
+    func connectivityManager(_ manager: ConnectivityManager, didUpdateGPSStatus enabled: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.isGpsEnabled = enabled
+            if self.isInternetConnected && enabled {
+                // Both GPS and Internet are now available
+                self.updateUI()
+            } else if !enabled {
+                self.updateUI()
+            }
         }
-        let isReachable = flags.contains(.reachable)
-        let needsConnection = flags.contains(.connectionRequired)
-        return isReachable && !needsConnection
     }
     
     private func proceedToMain() {
