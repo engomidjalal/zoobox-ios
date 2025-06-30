@@ -13,14 +13,12 @@ enum PermissionType: String, CaseIterable {
     case location = "location"
     case camera = "camera"
     case notifications = "notifications"
-    case microphone = "microphone"
     
     var displayName: String {
         switch self {
         case .location: return "Location"
         case .camera: return "Camera"
         case .notifications: return "Notifications"
-        case .microphone: return "Microphone"
         }
     }
     
@@ -29,7 +27,6 @@ enum PermissionType: String, CaseIterable {
         case .location: return "Zoobox needs your location to show nearby services and enable deliveries."
         case .camera: return "Zoobox needs camera access to scan QR codes and upload documents."
         case .notifications: return "Zoobox uses notifications to update you about orders and deliveries."
-        case .microphone: return "Zoobox needs microphone access for voice features and calls."
         }
     }
 }
@@ -103,10 +100,9 @@ class PermissionManager: NSObject {
     }
     
     func updateAllPermissionStatuses() {
-        // Update location, camera, and microphone synchronously
+        // Update location and camera synchronously
         permissionStatuses[.location] = getCurrentPermissionStatus(for: .location)
         permissionStatuses[.camera] = getCurrentPermissionStatus(for: .camera)
-        permissionStatuses[.microphone] = getCurrentPermissionStatus(for: .microphone)
         
         // Update notification status asynchronously
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
@@ -136,16 +132,63 @@ class PermissionManager: NSObject {
               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
         
         let jsCode = """
+            // Update the permissions object
             window.zooboxPermissions = \(jsonString);
+            
+            // Dispatch permission update event
             window.dispatchEvent(new CustomEvent('zooboxPermissionsUpdate', {
                 detail: \(jsonString)
             }));
+            
             console.log('🔐 Zoobox permissions injected:', \(jsonString));
+            console.log('🔐 Current permissions object:', window.zooboxPermissions);
         """
         
         webView.evaluateJavaScript(jsCode) { _, error in
             if let error = error {
                 print("🔐 Error injecting permissions: \(error)")
+            } else {
+                print("🔐 Permissions injected successfully: \(jsonString)")
+            }
+        }
+    }
+    
+    func forceRefreshPermissionsInWebView(_ webView: WKWebView) {
+        // Force a complete refresh of permissions in the webview
+        let permissionData: [String: Any] = Dictionary(uniqueKeysWithValues: PermissionType.allCases.map { type in
+            (type.rawValue, getPermissionStatus(for: type).rawValue)
+        })
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: permissionData),
+              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
+        
+        let jsCode = """
+            // Force refresh permissions
+            window.zooboxPermissions = \(jsonString);
+            
+            // Force dispatch multiple events to ensure it's caught
+            window.dispatchEvent(new CustomEvent('zooboxPermissionsUpdate', {
+                detail: \(jsonString)
+            }));
+            
+            // Also trigger a custom event for immediate update
+            window.dispatchEvent(new CustomEvent('zooboxPermissionsForceUpdate', {
+                detail: \(jsonString)
+            }));
+            
+            console.log('🔐 Permissions force refreshed:', \(jsonString));
+            
+            // Notify any waiting callbacks
+            if (window.onZooboxPermissionUpdate) {
+                window.onZooboxPermissionUpdate(\(jsonString));
+            }
+        """
+        
+        webView.evaluateJavaScript(jsCode) { _, error in
+            if let error = error {
+                print("🔐 Error force refreshing permissions: \(error)")
+            } else {
+                print("🔐 Permissions force refreshed successfully")
             }
         }
     }
@@ -187,16 +230,6 @@ class PermissionManager: NSObject {
         case .notifications:
             // Return cached value, will be updated when notification permission is requested
             return permissionStatuses[.notifications] ?? .notDetermined
-            
-        case .microphone:
-            let status = AVCaptureDevice.authorizationStatus(for: .audio)
-            switch status {
-            case .notDetermined: return .notDetermined
-            case .denied: return .denied
-            case .restricted: return .restricted
-            case .authorized: return .granted
-            @unknown default: return .notDetermined
-            }
         }
     }
     
@@ -220,14 +253,6 @@ class PermissionManager: NSObject {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
                 DispatchQueue.main.async {
                     self?.permissionStatuses[.notifications] = granted ? .granted : .denied
-                    self?.notifyDelegateOfPermissionChanges()
-                }
-            }
-            
-        case .microphone:
-            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
-                DispatchQueue.main.async {
-                    self?.permissionStatuses[.microphone] = granted ? .granted : .denied
                     self?.notifyDelegateOfPermissionChanges()
                 }
             }

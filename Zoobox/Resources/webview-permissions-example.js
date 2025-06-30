@@ -10,6 +10,59 @@ if (window.ZooboxBridge) {
     console.log('❌ ZooboxBridge not available');
 }
 
+// Test function to verify permission injection
+function testPermissionInjection() {
+    console.log('🧪 Testing permission injection...');
+    console.log('🔐 Current permissions:', window.zooboxPermissions);
+    
+    if (window.zooboxPermissions) {
+        console.log('✅ Permissions object exists');
+        Object.keys(window.zooboxPermissions).forEach(key => {
+            console.log(`🔐 ${key}: ${window.zooboxPermissions[key]}`);
+        });
+    } else {
+        console.log('❌ Permissions object not found');
+    }
+    
+    // Test location permission specifically
+    if (window.zooboxPermissions && window.zooboxPermissions.location === 'granted') {
+        console.log('✅ Location permission is granted - testing location access');
+        testLocationAccess();
+    } else {
+        console.log('❌ Location permission not granted');
+        console.log('🔐 Requesting location permission...');
+        if (window.ZooboxBridge) {
+            window.ZooboxBridge.requestPermission('location');
+        }
+    }
+}
+
+// Test location access
+function testLocationAccess() {
+    console.log('🧪 Testing location access...');
+    
+    if (navigator.geolocation) {
+        console.log('✅ Geolocation API available');
+        
+        // Test getCurrentPosition
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                console.log('✅ Location obtained successfully:', position.coords);
+            },
+            function(error) {
+                console.log('❌ Location error:', error.message);
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 60000
+            }
+        );
+    } else {
+        console.log('❌ Geolocation API not available');
+    }
+}
+
 // Example 1: Get current location (with permission check)
 function getCurrentLocation() {
     if (window.ZooboxBridge && window.ZooboxBridge.isPermissionGranted('location')) {
@@ -41,8 +94,7 @@ function checkAllPermissions() {
         const permissions = {
             location: window.zooboxPermissions.location,
             camera: window.zooboxPermissions.camera,
-            notifications: window.zooboxPermissions.notifications,
-            microphone: window.zooboxPermissions.microphone
+            notifications: window.zooboxPermissions.notifications
         };
         
         console.log('📊 Permission Summary:');
@@ -207,6 +259,22 @@ function handleCapturedPhoto(file) {
     // Your photo processing logic
 }
 
+// Auto-test function that runs when page loads
+function autoTestPermissions() {
+    console.log('🚀 Auto-testing permission injection...');
+    
+    // Wait a bit for permissions to be injected
+    setTimeout(() => {
+        testPermissionInjection();
+    }, 1000);
+    
+    // Also listen for permission updates
+    window.addEventListener('zooboxPermissionsUpdate', function(event) {
+        console.log('🔄 Permissions updated during auto-test:', event.detail);
+        testPermissionInjection();
+    });
+}
+
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
@@ -225,7 +293,13 @@ window.ZooboxPermissionExamples = {
     provideHapticFeedback,
     initializeApp,
     getLocationWithNativeAPI,
-    capturePhoto
+    capturePhoto,
+    testPermissionInjection,
+    testLocationAccess,
+    autoTestPermissions
 };
+
+// Run auto-test
+autoTestPermissions();
 
 console.log('🔐 Zoobox Permission Examples loaded'); 

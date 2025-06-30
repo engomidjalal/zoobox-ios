@@ -15,7 +15,6 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     // MARK: - Pull to Refresh
     private var refreshControl: UIRefreshControl!
-    private var scrollView: UIScrollView!
     
     private var fileUploadCompletionHandler: (([URL]?) -> Void)?
     
@@ -85,8 +84,8 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         webConfiguration.preferences.javaScriptCanOpenWindowsAutomatically = true
         webConfiguration.preferences.javaScriptEnabled = true
         
-        // Configure geolocation permissions (removed invalid keys)
-        // Note: allowFileAccessFromFileURLs and allowUniversalAccessFromFileURLs are not valid for WKPreferences
+        // Note: We use JavaScript override to prevent browser permission dialogs
+        // The configuration keys that were here were causing crashes
         
         let userContentController = WKUserContentController()
         userContentController.add(self, name: "hapticFeedback")
@@ -137,9 +136,16 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
                 }
             };
             
+            // Initialize permissions object immediately
+            window.zooboxPermissions = window.zooboxPermissions || {};
+            
             // Listen for permission updates
             window.addEventListener('zooboxPermissionsUpdate', function(event) {
                 console.log('🔐 Permissions updated:', event.detail);
+                // Update the permissions object
+                if (event.detail) {
+                    window.zooboxPermissions = event.detail;
+                }
                 // Notify any waiting permission requests
                 if (window.onZooboxPermissionUpdate) {
                     window.onZooboxPermissionUpdate(event.detail);
@@ -148,40 +154,86 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             
             console.log('🔐 ZooboxBridge initialized');
         """
-        let userScript = WKUserScript(source: jsSource, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
-        userContentController.addUserScript(userScript)
+        
+        let script = WKUserScript(source: jsSource, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        userContentController.addUserScript(script)
+        
+        // Add an even earlier script to immediately override geolocation API
+        let earlyOverrideScript = """
+            // IMMEDIATE geolocation override - runs before anything else
+            console.log('🔐 IMMEDIATE geolocation override starting...');
+            
+            // Override geolocation API immediately if it exists
+            if (navigator.geolocation) {
+                const originalGetCurrentPosition = navigator.geolocation.getCurrentPosition;
+                const originalWatchPosition = navigator.geolocation.watchPosition;
+                
+                navigator.geolocation.getCurrentPosition = function(successCallback, errorCallback, options) {
+                    console.log('🔐 EARLY: Geolocation getCurrentPosition intercepted');
+                    
+                    // Check if we have permission (will be updated later)
+                    if (window.zooboxPermissions && window.zooboxPermissions.location === 'granted') {
+                        console.log('✅ EARLY: Permission granted, using native location');
+                        if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
+                            window.ZooboxBridge.getCurrentLocation();
+                            window.lastLocationCallback = successCallback;
+                            window.lastLocationErrorCallback = errorCallback;
+                        } else {
+                            // Fallback to original
+                            originalGetCurrentPosition.call(navigator.geolocation, successCallback, errorCallback, options);
+                        }
+                    } else {
+                        console.log('❌ EARLY: Permission not granted, requesting');
+                        if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
+                            window.ZooboxBridge.requestPermission('location');
+                        }
+                        if (errorCallback) {
+                            errorCallback({ code: 1, message: 'Permission denied' });
+                        }
+                    }
+                };
+                
+                navigator.geolocation.watchPosition = function(successCallback, errorCallback, options) {
+                    console.log('🔐 EARLY: Geolocation watchPosition intercepted');
+                    
+                    if (window.zooboxPermissions && window.zooboxPermissions.location === 'granted') {
+                        console.log('✅ EARLY: Permission granted, starting native tracking');
+                        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.startRealTimeLocation) {
+                            window.webkit.messageHandlers.startRealTimeLocation.postMessage({});
+                        }
+                        window.locationWatchCallback = successCallback;
+                        window.locationWatchErrorCallback = errorCallback;
+                        return Math.floor(Math.random() * 1000000);
+                    } else {
+                        console.log('❌ EARLY: Permission not granted, requesting');
+                        if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
+                            window.ZooboxBridge.requestPermission('location');
+                        }
+                        if (errorCallback) {
+                            errorCallback({ code: 1, message: 'Permission denied' });
+                        }
+                        return -1;
+                    }
+                };
+                
+                console.log('✅ EARLY: Geolocation API overridden successfully');
+            }
+            
+            // Initialize permissions object
+            window.zooboxPermissions = window.zooboxPermissions || {};
+            console.log('🔐 EARLY: Permission override complete');
+        """
+        
+        let earlyScript = WKUserScript(source: earlyOverrideScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        userContentController.addUserScript(earlyScript)
+        
         webConfiguration.userContentController = userContentController
+        
         webView = WKWebView(frame: .zero, configuration: webConfiguration)
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        webView.translatesAutoresizingMaskIntoConstraints = false
-        webView.configuration.allowsInlineMediaPlayback = true
-        webView.configuration.mediaTypesRequiringUserActionForPlayback = []
         
-        // Setup scroll view for pull-to-refresh
-        setupScrollViewWithRefreshControl()
-        
-        view.addSubview(scrollView)
-        let safeArea = view.safeAreaLayoutGuide
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: safeArea.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: safeArea.trailingAnchor)
-        ])
-    }
-    
-    // MARK: - Pull to Refresh Setup
-    private func setupScrollViewWithRefreshControl() {
-        // Create scroll view
-        scrollView = UIScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.showsVerticalScrollIndicator = false
-        scrollView.showsHorizontalScrollIndicator = false
-        scrollView.alwaysBounceVertical = true
-        scrollView.backgroundColor = .zooboxBackground
-        
-        // Create modern refresh control with red color
+        // Set up refresh control for webview
         refreshControl = UIRefreshControl()
         refreshControl.tintColor = .zooboxRed
         refreshControl.attributedTitle = NSAttributedString(
@@ -192,28 +244,22 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             ]
         )
         
-        // Add refresh control to scroll view
-        scrollView.refreshControl = refreshControl
+        webView.scrollView.refreshControl = refreshControl
+        
+        // Set up pull-to-refresh
         refreshControl.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
         
-        // Update refresh control appearance
-        updateRefreshControlAppearance()
-        
-        // Add webview to scroll view
-        scrollView.addSubview(webView)
-        webView.backgroundColor = .zooboxBackground
+        view.addSubview(webView)
         webView.translatesAutoresizingMaskIntoConstraints = false
-        
-        // Make webview fill the entire scroll view
         NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: scrollView.topAnchor),
-            webView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
-            webView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
-            webView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
-            webView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
+    
+    // MARK: - Pull to Refresh Setup (now handled by webview's built-in scroll view)
     
     @objc private func handleRefresh() {
         // Provide haptic feedback
@@ -361,7 +407,16 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         }
         
         print("🔐 WebView requesting permission: \(permissionType.displayName)")
-        permissionManager.handleWebViewPermissionRequest(for: permissionType, from: self)
+        
+        // Check if permission is already granted
+        if permissionManager.isPermissionGranted(for: permissionType) {
+            print("✅ Permission already granted for \(permissionType.displayName)")
+            // Force refresh permissions to notify webview
+            permissionManager.forceRefreshPermissionsInWebView(webView)
+        } else {
+            print("❌ Permission not granted for \(permissionType.displayName) - requesting")
+            permissionManager.handleWebViewPermissionRequest(for: permissionType, from: self)
+        }
     }
     
     private func handleGetPermissionStatus(message: WKScriptMessage) {
@@ -373,7 +428,13 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         }
         
         let status = permissionManager.getPermissionStatus(for: permissionType)
+        print("🔐 WebView requested permission status for \(permissionType.displayName): \(status.rawValue)")
+        
+        // Inject the specific permission status
         injectPermissionStatusToWebView(permissionType: permissionType, status: status)
+        
+        // Also force refresh all permissions to ensure consistency
+        permissionManager.forceRefreshPermissionsInWebView(webView)
     }
     
     private func injectPermissionStatusToWebView(permissionType: PermissionType, status: PermissionStatus) {
@@ -411,19 +472,25 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     }
     
     private func handleLocationRequest() {
+        print("🔐 Location request received from WebView")
+        
         // Check if location permission is granted
         if permissionManager.isPermissionGranted(for: .location) {
+            print("✅ Location permission granted - getting location")
             // Permission already granted, get location directly
             locationManager.getCurrentLocation { [weak self] location, error in
                 DispatchQueue.main.async {
                     if let location = location {
+                        print("📍 Location obtained successfully: \(location.coordinate.latitude), \(location.coordinate.longitude)")
                         self?.injectLocationToWebView(location: location)
                     } else if let error = error {
+                        print("📍 Location error: \(error.localizedDescription)")
                         self?.injectLocationErrorToWebView(error: error)
                     }
                 }
             }
         } else {
+            print("❌ Location permission not granted - requesting permission")
             // Request permission with explanation
             permissionManager.requestPermissionWithExplanation(for: .location, from: self)
         }
@@ -608,23 +675,19 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         // Stop refresh control
         refreshControl.endRefreshing()
         
-        // Show success feedback if this was a refresh
-        if refreshControl.isRefreshing {
-            showRefreshSuccess()
-        } else {
-            // Reset refresh control title
-            refreshControl.attributedTitle = NSAttributedString(
-                string: "Pull to refresh",
-                attributes: [
-                    .foregroundColor: UIColor.secondaryLabel,
-                    .font: UIFont.systemFont(ofSize: 14, weight: .medium)
-                ]
-            )
-        }
+        // Reset refresh control title
+        refreshControl.attributedTitle = NSAttributedString(
+            string: "Pull to refresh",
+            attributes: [
+                .foregroundColor: UIColor.secondaryLabel,
+                .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+            ]
+        )
         
         // Cache the page
         offlineContentManager.cacheCurrentPage(webView)
-        // Inject permissions to WebView
+        
+        // Inject permissions to WebView FIRST - before any other scripts
         permissionManager.injectPermissionStatusToWebView(webView)
         
         // Only inject permission override script once
@@ -638,325 +701,340 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         
         // Inject comprehensive permission override script
         let permissionOverrideScript = """
-            console.log('Zoobox WebView loaded successfully');
-            if (window.ZooboxBridge) {
-                console.log('ZooboxBridge is available');
+            console.log('🔐 Zoobox Permission Override System Initializing...');
+            
+            // Ensure permissions object exists
+            if (!window.zooboxPermissions) {
+                window.zooboxPermissions = {};
             }
-            console.log('🔐 Available permissions:', window.zooboxPermissions);
             
-            // Add offline detection
-            window.addEventListener('online', function() {
-                console.log('🌐 Internet connection restored');
-                if (window.webkit && window.webkit.messageHandlers.connectionRestored) {
-                    window.webkit.messageHandlers.connectionRestored.postMessage({});
-                }
-            });
+            // Store original APIs
+            const originalGeolocation = navigator.geolocation;
+            const originalNotification = window.Notification;
+            const originalGetUserMedia = navigator.mediaDevices ? navigator.mediaDevices.getUserMedia : null;
             
-            window.addEventListener('offline', function() {
-                console.log('📱 Internet connection lost');
-                if (window.webkit && window.webkit.messageHandlers.connectionLost) {
-                    window.webkit.messageHandlers.connectionLost.postMessage({});
-                }
-            });
-            
-            // Comprehensive Permission Override System
-            (function() {
-                'use strict';
+            // Override geolocation API IMMEDIATELY
+            if (navigator.geolocation) {
+                console.log('🔐 Overriding geolocation API...');
                 
-                // Store original APIs
-                const originalGeolocation = navigator.geolocation;
-                const originalNotification = window.Notification;
-                const originalGetUserMedia = navigator.mediaDevices ? navigator.mediaDevices.getUserMedia : null;
+                const originalGetCurrentPosition = navigator.geolocation.getCurrentPosition;
+                const originalWatchPosition = navigator.geolocation.watchPosition;
+                const originalClearWatch = navigator.geolocation.clearWatch;
                 
-                // Permission status from native app
-                let zooboxPermissions = window.zooboxPermissions || {};
-                
-                // Override geolocation API
-                if (navigator.geolocation) {
-                    console.log('🔐 Overriding geolocation API...');
+                // Override getCurrentPosition
+                navigator.geolocation.getCurrentPosition = function(successCallback, errorCallback, options) {
+                    console.log('🔐 Geolocation getCurrentPosition called');
+                    console.log('🔐 Current permissions:', window.zooboxPermissions);
                     
-                    const originalGetCurrentPosition = navigator.geolocation.getCurrentPosition;
-                    const originalWatchPosition = navigator.geolocation.watchPosition;
-                    const originalClearWatch = navigator.geolocation.clearWatch;
-                    
-                    // Override getCurrentPosition
-                    navigator.geolocation.getCurrentPosition = function(successCallback, errorCallback, options) {
-                        console.log('🔐 Geolocation getCurrentPosition called');
+                    if (window.zooboxPermissions.location === 'granted') {
+                        console.log('✅ Location permission granted - using native location');
                         
-                        if (zooboxPermissions.location === 'granted') {
-                            console.log('✅ Location permission granted - using native location');
+                        if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
+                            // Use native location
+                            window.ZooboxBridge.getCurrentLocation();
                             
-                            if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
-                                // Use native location
-                                window.ZooboxBridge.getCurrentLocation();
-                                
-                                // Set up callbacks for native response
-                                window.lastLocationCallback = function(position) {
-                                    console.log('📍 Native location received:', position);
-                                    if (successCallback) {
-                                        successCallback(position);
-                                    }
-                                };
-                                
-                                window.lastLocationErrorCallback = function(error) {
-                                    console.log('📍 Native location error:', error);
-                                    if (errorCallback) {
-                                        errorCallback(error);
-                                    }
-                                };
-                            } else {
-                                // Fallback to original API
-                                console.log('⚠️ ZooboxBridge not available - using original API');
-                                originalGetCurrentPosition.call(navigator.geolocation, successCallback, errorCallback, options);
-                            }
-                        } else {
-                            console.log('❌ Location permission not granted - requesting permission');
-                            if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
-                                window.ZooboxBridge.requestPermission('location');
-                            }
-                            if (errorCallback) {
-                                errorCallback({ 
-                                    code: 1, 
-                                    message: 'Permission denied - please grant location permission in the app' 
-                                });
-                            }
-                        }
-                    };
-                    
-                    // Override watchPosition
-                    navigator.geolocation.watchPosition = function(successCallback, errorCallback, options) {
-                        console.log('🔐 Geolocation watchPosition called');
-                        
-                        if (zooboxPermissions.location === 'granted') {
-                            console.log('✅ Location permission granted - starting native tracking');
-                            
-                            if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
-                                // Start real-time tracking
-                                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.startRealTimeLocation) {
-                                    window.webkit.messageHandlers.startRealTimeLocation.postMessage({});
+                            // Set up callbacks for native response
+                            window.lastLocationCallback = function(position) {
+                                console.log('📍 Native location received:', position);
+                                if (successCallback) {
+                                    successCallback(position);
                                 }
-                                
-                                // Set up callbacks for location updates
-                                window.locationWatchCallback = function(position) {
-                                    console.log('📍 Native location update:', position);
-                                    if (successCallback) {
-                                        successCallback(position);
-                                    }
-                                };
-                                
-                                window.locationWatchErrorCallback = function(error) {
-                                    console.log('📍 Native location error:', error);
-                                    if (errorCallback) {
-                                        errorCallback(error);
-                                    }
-                                };
-                                
-                                // Return a mock watch ID
-                                const watchId = Math.floor(Math.random() * 1000000);
-                                console.log('📍 Watch ID created:', watchId);
-                                return watchId;
-                            } else {
-                                // Fallback to original API
-                                console.log('⚠️ ZooboxBridge not available - using original API');
-                                return originalWatchPosition.call(navigator.geolocation, successCallback, errorCallback, options);
-                            }
-                        } else {
-                            console.log('❌ Location permission not granted - requesting permission');
-                            if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
-                                window.ZooboxBridge.requestPermission('location');
-                            }
-                            if (errorCallback) {
-                                errorCallback({ 
-                                    code: 1, 
-                                    message: 'Permission denied - please grant location permission in the app' 
-                                });
-                            }
-                            return -1;
-                        }
-                    };
-                    
-                    // Keep original clearWatch
-                    navigator.geolocation.clearWatch = function(watchId) {
-                        console.log('🔐 Clearing location watch:', watchId);
-                        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.stopRealTimeLocation) {
-                            window.webkit.messageHandlers.stopRealTimeLocation.postMessage({});
-                        }
-                        return originalClearWatch.call(navigator.geolocation, watchId);
-                    };
-                    
-                    console.log('✅ Geolocation API overridden successfully');
-                }
-                
-                // Override Notification API
-                if (window.Notification) {
-                    console.log('🔐 Overriding Notification API...');
-                    
-                    const originalRequestPermission = window.Notification.requestPermission;
-                    
-                    window.Notification.requestPermission = function(callback) {
-                        console.log('🔐 Notification permission requested');
-                        
-                        if (zooboxPermissions.notifications === 'granted') {
-                            console.log('✅ Notification permission already granted');
-                            if (callback) {
-                                callback('granted');
-                            }
-                            return Promise.resolve('granted');
-                        } else {
-                            console.log('❌ Notification permission not granted - requesting permission');
-                            if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
-                                window.ZooboxBridge.requestPermission('notifications');
-                            }
-                            if (callback) {
-                                callback('denied');
-                            }
-                            return Promise.resolve('denied');
-                        }
-                    };
-                    
-                    console.log('✅ Notification API overridden successfully');
-                }
-                
-                // Override getUserMedia API (for camera/microphone)
-                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                    console.log('🔐 Overriding getUserMedia API...');
-                    
-                    const originalGetUserMedia = navigator.mediaDevices.getUserMedia;
-                    
-                    navigator.mediaDevices.getUserMedia = function(constraints) {
-                        console.log('🔐 getUserMedia called with constraints:', constraints);
-                        
-                        // Check what permissions are needed
-                        const needsCamera = constraints.video;
-                        const needsMicrophone = constraints.audio;
-                        
-                        let canProceed = true;
-                        let missingPermissions = [];
-                        
-                        if (needsCamera && zooboxPermissions.camera !== 'granted') {
-                            canProceed = false;
-                            missingPermissions.push('camera');
-                        }
-                        
-                        if (needsMicrophone && zooboxPermissions.microphone !== 'granted') {
-                            canProceed = false;
-                            missingPermissions.push('microphone');
-                        }
-                        
-                        if (canProceed) {
-                            console.log('✅ All required permissions granted - proceeding with getUserMedia');
-                            return originalGetUserMedia.call(navigator.mediaDevices, constraints);
-                        } else {
-                            console.log('❌ Missing permissions:', missingPermissions);
+                            };
                             
-                            // Request missing permissions
-                            missingPermissions.forEach(permission => {
-                                if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
-                                    window.ZooboxBridge.requestPermission(permission);
+                            window.lastLocationErrorCallback = function(error) {
+                                console.log('📍 Native location error:', error);
+                                if (errorCallback) {
+                                    errorCallback(error);
                                 }
+                            };
+                        } else {
+                            // Fallback to original API
+                            console.log('⚠️ ZooboxBridge not available - using original API');
+                            originalGetCurrentPosition.call(navigator.geolocation, successCallback, errorCallback, options);
+                        }
+                    } else {
+                        console.log('❌ Location permission not granted - requesting permission');
+                        if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
+                            window.ZooboxBridge.requestPermission('location');
+                        }
+                        if (errorCallback) {
+                            errorCallback({ 
+                                code: 1, 
+                                message: 'Permission denied - please grant location permission in the app' 
                             });
-                            
-                            // Return rejected promise
-                            return Promise.reject(new DOMException(
-                                'Permission denied - please grant ' + missingPermissions.join(' and ') + ' permission in the app',
-                                'NotAllowedError'
-                            ));
                         }
-                    };
-                    
-                    console.log('✅ getUserMedia API overridden successfully');
-                }
-                
-                // Listen for permission updates from native app
-                window.addEventListener('zooboxPermissionsUpdate', function(event) {
-                    console.log('🔐 Permissions updated from native app:', event.detail);
-                    zooboxPermissions = event.detail;
-                    
-                    // Re-evaluate any pending permission requests
-                    console.log('🔄 Permission status updated - re-evaluating pending requests');
-                });
-                
-                // Override permission query API if available
-                if (navigator.permissions && navigator.permissions.query) {
-                    console.log('🔐 Overriding permissions.query API...');
-                    
-                    const originalQuery = navigator.permissions.query;
-                    
-                    navigator.permissions.query = function(permissionDescriptor) {
-                        console.log('🔐 Permission query:', permissionDescriptor);
-                        
-                        const permissionName = permissionDescriptor.name;
-                        let permissionStatus = 'denied';
-                        
-                        switch (permissionName) {
-                            case 'geolocation':
-                                permissionStatus = zooboxPermissions.location === 'granted' ? 'granted' : 'denied';
-                                break;
-                            case 'notifications':
-                                permissionStatus = zooboxPermissions.notifications === 'granted' ? 'granted' : 'denied';
-                                break;
-                            case 'camera':
-                                permissionStatus = zooboxPermissions.camera === 'granted' ? 'granted' : 'denied';
-                                break;
-                            case 'microphone':
-                                permissionStatus = zooboxPermissions.microphone === 'granted' ? 'granted' : 'denied';
-                                break;
-                            default:
-                                // Use original API for unknown permissions
-                                return originalQuery.call(navigator.permissions, permissionDescriptor);
-                        }
-                        
-                        console.log('🔐 Permission status for', permissionName, ':', permissionStatus);
-                        
-                        // Return a mock PermissionStatus object
-                        return Promise.resolve({
-                            state: permissionStatus,
-                            onchange: null
-                        });
-                    };
-                    
-                    console.log('✅ permissions.query API overridden successfully');
-                }
-                
-                // Prevent any existing permission dialogs from showing
-                const preventPermissionDialogs = function() {
-                    // Override any existing permission request methods
-                    if (window.confirm) {
-                        const originalConfirm = window.confirm;
-                        window.confirm = function(message) {
-                            if (message && (message.includes('location') || message.includes('camera') || message.includes('microphone'))) {
-                                console.log('🔐 Blocking permission dialog:', message);
-                                return false;
-                            }
-                            return originalConfirm.call(window, message);
-                        };
-                    }
-                    
-                    // Override alert for permission-related messages
-                    if (window.alert) {
-                        const originalAlert = window.alert;
-                        window.alert = function(message) {
-                            if (message && (message.includes('location') || message.includes('camera') || message.includes('microphone'))) {
-                                console.log('🔐 Blocking permission alert:', message);
-                                return;
-                            }
-                            return originalAlert.call(window, message);
-                        };
                     }
                 };
                 
-                // Run prevention immediately
-                preventPermissionDialogs();
+                // Override watchPosition
+                navigator.geolocation.watchPosition = function(successCallback, errorCallback, options) {
+                    console.log('🔐 Geolocation watchPosition called');
+                    console.log('🔐 Current permissions:', window.zooboxPermissions);
+                    
+                    if (window.zooboxPermissions.location === 'granted') {
+                        console.log('✅ Location permission granted - starting native tracking');
+                        
+                        if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
+                            // Start real-time tracking
+                            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.startRealTimeLocation) {
+                                window.webkit.messageHandlers.startRealTimeLocation.postMessage({});
+                            }
+                            
+                            // Set up callbacks for location updates
+                            window.locationWatchCallback = function(position) {
+                                console.log('📍 Native location update:', position);
+                                if (successCallback) {
+                                    successCallback(position);
+                                }
+                            };
+                            
+                            window.locationWatchErrorCallback = function(error) {
+                                console.log('📍 Native location error:', error);
+                                if (errorCallback) {
+                                    errorCallback(error);
+                                }
+                            };
+                            
+                            // Return a mock watch ID
+                            const watchId = Math.floor(Math.random() * 1000000);
+                            console.log('📍 Watch ID created:', watchId);
+                            return watchId;
+                        } else {
+                            // Fallback to original API
+                            console.log('⚠️ ZooboxBridge not available - using original API');
+                            return originalWatchPosition.call(navigator.geolocation, successCallback, errorCallback, options);
+                        }
+                    } else {
+                        console.log('❌ Location permission not granted - requesting permission');
+                        if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
+                            window.ZooboxBridge.requestPermission('location');
+                        }
+                        if (errorCallback) {
+                            errorCallback({ 
+                                code: 1, 
+                                message: 'Permission denied - please grant location permission in the app' 
+                            });
+                        }
+                        return -1;
+                    }
+                };
                 
-                // Also run after DOM is ready
-                if (document.readyState === 'loading') {
-                    document.addEventListener('DOMContentLoaded', preventPermissionDialogs);
+                // Keep original clearWatch
+                navigator.geolocation.clearWatch = function(watchId) {
+                    console.log('🔐 Clearing location watch:', watchId);
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.stopRealTimeLocation) {
+                        window.webkit.messageHandlers.stopRealTimeLocation.postMessage({});
+                    }
+                    return originalClearWatch.call(navigator.geolocation, watchId);
+                };
+                
+                console.log('✅ Geolocation API overridden successfully');
+            }
+            
+            // Override Notification API
+            if (window.Notification) {
+                console.log('🔐 Overriding Notification API...');
+                
+                const originalRequestPermission = window.Notification.requestPermission;
+                
+                window.Notification.requestPermission = function(callback) {
+                    console.log('🔐 Notification permission requested');
+                    
+                    if (window.zooboxPermissions.notifications === 'granted') {
+                        console.log('✅ Notification permission already granted');
+                        if (callback) {
+                            callback('granted');
+                        }
+                        return Promise.resolve('granted');
+                    } else {
+                        console.log('❌ Notification permission not granted - requesting permission');
+                        if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
+                            window.ZooboxBridge.requestPermission('notifications');
+                        }
+                        if (callback) {
+                            callback('denied');
+                        }
+                        return Promise.resolve('denied');
+                    }
+                };
+                
+                console.log('✅ Notification API overridden successfully');
+            }
+            
+            // Override getUserMedia API (for camera)
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                console.log('🔐 Overriding getUserMedia API...');
+                
+                const originalGetUserMedia = navigator.mediaDevices.getUserMedia;
+                
+                navigator.mediaDevices.getUserMedia = function(constraints) {
+                    console.log('🔐 getUserMedia called with constraints:', constraints);
+                    
+                    // Check what permissions are needed
+                    const needsCamera = constraints.video;
+                    
+                    let canProceed = true;
+                    let missingPermissions = [];
+                    
+                    if (needsCamera && window.zooboxPermissions.camera !== 'granted') {
+                        canProceed = false;
+                        missingPermissions.push('camera');
+                    }
+                    
+                    if (canProceed) {
+                        console.log('✅ All required permissions granted - proceeding with getUserMedia');
+                        return originalGetUserMedia.call(navigator.mediaDevices, constraints);
+                    } else {
+                        console.log('❌ Missing permissions:', missingPermissions);
+                        
+                        // Request missing permissions
+                        missingPermissions.forEach(permission => {
+                            if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
+                                window.ZooboxBridge.requestPermission(permission);
+                            }
+                        });
+                        
+                        // Return rejected promise
+                        return Promise.reject(new DOMException(
+                            'Permission denied - please grant ' + missingPermissions.join(' and ') + ' permission in the app',
+                            'NotAllowedError'
+                        ));
+                    }
+                };
+                
+                console.log('✅ getUserMedia API overridden successfully');
+            }
+            
+            // Listen for permission updates from native app
+            window.addEventListener('zooboxPermissionsUpdate', function(event) {
+                console.log('🔐 Permissions updated from native app:', event.detail);
+                if (event.detail) {
+                    window.zooboxPermissions = event.detail;
                 }
                 
-                console.log('🔐 Zoobox Permission Override System Initialized Successfully');
-                console.log('🔐 Current permissions:', zooboxPermissions);
+                // Re-evaluate any pending permission requests
+                console.log('🔄 Permission status updated - re-evaluating pending requests');
+            });
+            
+            // Override permission query API if available
+            if (navigator.permissions && navigator.permissions.query) {
+                console.log('🔐 Overriding permissions.query API...');
                 
-            })();
+                const originalQuery = navigator.permissions.query;
+                
+                navigator.permissions.query = function(permissionDescriptor) {
+                    console.log('🔐 Permission query:', permissionDescriptor);
+                    
+                    const permissionName = permissionDescriptor.name;
+                    let permissionStatus = 'denied';
+                    
+                    switch (permissionName) {
+                        case 'geolocation':
+                            permissionStatus = window.zooboxPermissions.location === 'granted' ? 'granted' : 'denied';
+                            break;
+                        case 'notifications':
+                            permissionStatus = window.zooboxPermissions.notifications === 'granted' ? 'granted' : 'denied';
+                            break;
+                        case 'camera':
+                            permissionStatus = window.zooboxPermissions.camera === 'granted' ? 'granted' : 'denied';
+                            break;
+                        default:
+                            // Use original API for unknown permissions
+                            return originalQuery.call(navigator.permissions, permissionDescriptor);
+                    }
+                    
+                    console.log('🔐 Permission status for', permissionName, ':', permissionStatus);
+                    
+                    // Return a mock PermissionStatus object
+                    return Promise.resolve({
+                        state: permissionStatus,
+                        onchange: null
+                    });
+                };
+                
+                console.log('✅ permissions.query API overridden successfully');
+            }
+            
+            // AGGRESSIVE: Prevent any existing permission dialogs from showing
+            const preventPermissionDialogs = function() {
+                // Override any existing permission request methods
+                if (window.confirm) {
+                    const originalConfirm = window.confirm;
+                    window.confirm = function(message) {
+                        if (message && (message.includes('location') || message.includes('camera'))) {
+                            console.log('🔐 Blocking permission dialog:', message);
+                            return false;
+                        }
+                        return originalConfirm.call(window, message);
+                    };
+                }
+                
+                // Override alert for permission-related messages
+                if (window.alert) {
+                    const originalAlert = window.alert;
+                    window.alert = function(message) {
+                        if (message && (message.includes('location') || message.includes('camera'))) {
+                            console.log('🔐 Blocking permission alert:', message);
+                            return;
+                        }
+                        return originalAlert.call(window, message);
+                    };
+                }
+                
+                // Override prompt for permission-related messages
+                if (window.prompt) {
+                    const originalPrompt = window.prompt;
+                    window.prompt = function(message, defaultValue) {
+                        if (message && (message.includes('location') || message.includes('camera'))) {
+                            console.log('🔐 Blocking permission prompt:', message);
+                            return null;
+                        }
+                        return originalPrompt.call(window, message, defaultValue);
+                    };
+                }
+                
+                // Override any existing geolocation API that might have been set after our override
+                if (navigator.geolocation) {
+                    // Double-check that our override is still in place
+                    if (navigator.geolocation.getCurrentPosition.toString().includes('Zoobox')) {
+                        console.log('✅ Geolocation override still active');
+                    } else {
+                        console.log('⚠️ Geolocation override was overwritten - reapplying');
+                        // Re-apply our override
+                        navigator.geolocation.getCurrentPosition = function(successCallback, errorCallback, options) {
+                            console.log('🔐 Geolocation getCurrentPosition called (re-override)');
+                            if (window.zooboxPermissions.location === 'granted') {
+                                if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
+                                    window.ZooboxBridge.getCurrentLocation();
+                                    window.lastLocationCallback = successCallback;
+                                    window.lastLocationErrorCallback = errorCallback;
+                                }
+                            } else {
+                                if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
+                                    window.ZooboxBridge.requestPermission('location');
+                                }
+                                if (errorCallback) {
+                                    errorCallback({ code: 1, message: 'Permission denied' });
+                                }
+                            }
+                        };
+                    }
+                }
+            };
+            
+            // Run prevention immediately
+            preventPermissionDialogs();
+            
+            // Also run after DOM is ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', preventPermissionDialogs);
+            }
+            
+            // Run prevention periodically to catch any late-overrides
+            setInterval(preventPermissionDialogs, 1000);
+            
+            console.log('🔐 Zoobox Permission Override System Initialized Successfully');
+            console.log('🔐 Current permissions:', window.zooboxPermissions);
         """
         
         webView.evaluateJavaScript(permissionOverrideScript) { _, error in
@@ -1035,7 +1113,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     // MARK: - WKUIDelegate (Camera & Photo File Upload)
     func webView(_ webView: WKWebView,
-                 runOpenPanelWith parameters: WKOpenPanelParameters,
+                 runOpenPanelWith parameters: Any,
                  initiatedByFrame frame: WKFrameInfo,
                  completionHandler: @escaping ([URL]?) -> Void) {
         
@@ -1077,20 +1155,13 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     // MARK: - WKUIDelegate (Geolocation Permission)
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        // Check camera/microphone permissions
+        // Check camera permissions
         switch type {
         case .camera:
             if permissionManager.isPermissionGranted(for: .camera) {
                 decisionHandler(.grant)
             } else {
                 permissionManager.requestPermissionWithExplanation(for: .camera, from: self)
-                decisionHandler(.deny)
-            }
-        case .microphone:
-            if permissionManager.isPermissionGranted(for: .microphone) {
-                decisionHandler(.grant)
-            } else {
-                permissionManager.requestPermissionWithExplanation(for: .microphone, from: self)
                 decisionHandler(.deny)
             }
         @unknown default:
@@ -1106,14 +1177,20 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     func webView(_ webView: WKWebView, requestGeolocationPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
         print("🔐 WebView requesting geolocation permission for: \(origin.host)")
         
+        // Always check if we have location permission first
         if permissionManager.isPermissionGranted(for: .location) {
-            print("✅ Location permission already granted - allowing WebView access")
+            print("✅ Location permission already granted - allowing WebView access immediately")
             decisionHandler(.grant)
-        } else {
-            print("❌ Location permission not granted - showing permission request")
-            permissionManager.requestPermissionWithExplanation(for: .location, from: self)
-            decisionHandler(.deny)
+            return
         }
+        
+        // If we don't have permission, request it and deny for now
+        // The permission manager will handle the request and update the webview later
+        print("❌ Location permission not granted - requesting permission")
+        permissionManager.requestPermissionWithExplanation(for: .location, from: self)
+        
+        // Deny for now, but the webview will be updated when permission is granted
+        decisionHandler(.deny)
     }
     
     // MARK: - Error Handling Methods
@@ -1189,8 +1266,42 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     // MARK: - PermissionManagerDelegate
     
     func permissionManager(_ manager: PermissionManager, didUpdatePermissions permissions: [PermissionType: PermissionStatus]) {
-        // Inject updated permissions to WebView
-        permissionManager.injectPermissionStatusToWebView(webView)
+        // Force refresh permissions in WebView to ensure they're properly updated
+        permissionManager.forceRefreshPermissionsInWebView(webView)
+        
+        // If location permission was just granted, retry any pending geolocation requests
+        if let locationStatus = permissions[.location], locationStatus == .granted {
+            print("✅ Location permission granted - retrying any pending geolocation requests")
+            
+            // Inject a script to retry any pending geolocation requests
+            let retryScript = """
+                console.log('🔄 Retrying pending geolocation requests...');
+                
+                // If there are any pending location callbacks, retry them
+                if (window.lastLocationCallback && window.zooboxPermissions.location === 'granted') {
+                    console.log('🔄 Retrying getCurrentPosition request');
+                    if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
+                        window.ZooboxBridge.getCurrentLocation();
+                    }
+                }
+                
+                // If there are any pending watch callbacks, retry them
+                if (window.locationWatchCallback && window.zooboxPermissions.location === 'granted') {
+                    console.log('🔄 Retrying watchPosition request');
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.startRealTimeLocation) {
+                        window.webkit.messageHandlers.startRealTimeLocation.postMessage({});
+                    }
+                }
+            """
+            
+            webView.evaluateJavaScript(retryScript) { _, error in
+                if let error = error {
+                    print("🔐 Error retrying geolocation requests: \(error)")
+                } else {
+                    print("🔐 Geolocation requests retried successfully")
+                }
+            }
+        }
     }
     
     func permissionManager(_ manager: PermissionManager, requiresPermissionAlertFor permission: PermissionType) {

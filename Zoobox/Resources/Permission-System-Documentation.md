@@ -25,7 +25,6 @@ The Zoobox app now includes a comprehensive permission management system that al
 - **Location**: GPS and location services
 - **Camera**: Photo capture and video recording
 - **Notifications**: Push notifications and alerts
-- **Microphone**: Voice recording and calls
 
 ## 🏗️ Architecture
 
@@ -59,8 +58,7 @@ When the WebView loads, permissions are automatically injected:
 window.zooboxPermissions = {
     "location": "granted",
     "camera": "granted", 
-    "notifications": "granted",
-    "microphone": "notDetermined"
+    "notifications": "granted"
 };
 ```
 
@@ -121,8 +119,7 @@ window.ZooboxBridge.hapticFeedback('light');   // light, medium, heavy
 window.zooboxPermissions = {
     "location": "granted",        // granted, denied, notDetermined, restricted
     "camera": "granted",
-    "notifications": "granted", 
-    "microphone": "notDetermined"
+    "notifications": "granted"
 };
 ```
 
@@ -177,7 +174,6 @@ function checkPermissions() {
     console.log('Location:', permissions.location);
     console.log('Camera:', permissions.camera);
     console.log('Notifications:', permissions.notifications);
-    console.log('Microphone:', permissions.microphone);
 }
 ```
 
@@ -219,7 +215,6 @@ enum PermissionType: String, CaseIterable {
     case location = "location"
     case camera = "camera" 
     case notifications = "notifications"
-    case microphone = "microphone"
 }
 ```
 

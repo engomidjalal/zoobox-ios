@@ -160,7 +160,7 @@ console.log('🔐 Zoobox Permission Override System Initializing...');
         console.log('✅ Notification API overridden successfully');
     }
     
-    // Override getUserMedia API (for camera/microphone)
+    // Override getUserMedia API (for camera)
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         console.log('🔐 Overriding getUserMedia API...');
         
@@ -171,7 +171,6 @@ console.log('🔐 Zoobox Permission Override System Initializing...');
             
             // Check what permissions are needed
             const needsCamera = constraints.video;
-            const needsMicrophone = constraints.audio;
             
             let canProceed = true;
             let missingPermissions = [];
@@ -179,11 +178,6 @@ console.log('🔐 Zoobox Permission Override System Initializing...');
             if (needsCamera && zooboxPermissions.camera !== 'granted') {
                 canProceed = false;
                 missingPermissions.push('camera');
-            }
-            
-            if (needsMicrophone && zooboxPermissions.microphone !== 'granted') {
-                canProceed = false;
-                missingPermissions.push('microphone');
             }
             
             if (canProceed) {
@@ -241,9 +235,6 @@ console.log('🔐 Zoobox Permission Override System Initializing...');
                 case 'camera':
                     permissionStatus = zooboxPermissions.camera === 'granted' ? 'granted' : 'denied';
                     break;
-                case 'microphone':
-                    permissionStatus = zooboxPermissions.microphone === 'granted' ? 'granted' : 'denied';
-                    break;
                 default:
                     // Use original API for unknown permissions
                     return originalQuery.call(navigator.permissions, permissionDescriptor);
@@ -267,7 +258,7 @@ console.log('🔐 Zoobox Permission Override System Initializing...');
         if (window.confirm) {
             const originalConfirm = window.confirm;
             window.confirm = function(message) {
-                if (message && (message.includes('location') || message.includes('camera') || message.includes('microphone'))) {
+                if (message && (message.includes('location') || message.includes('camera'))) {
                     console.log('🔐 Blocking permission dialog:', message);
                     return false;
                 }
@@ -279,7 +270,7 @@ console.log('🔐 Zoobox Permission Override System Initializing...');
         if (window.alert) {
             const originalAlert = window.alert;
             window.alert = function(message) {
-                if (message && (message.includes('location') || message.includes('camera') || message.includes('microphone'))) {
+                if (message && (message.includes('location') || message.includes('camera'))) {
                     console.log('🔐 Blocking permission alert:', message);
                     return;
                 }
