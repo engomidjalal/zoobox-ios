@@ -3,11 +3,12 @@ import WebKit
 import CoreLocation
 import MobileCoreServices
 
-class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, LocationManagerDelegate, PermissionManagerDelegate, ConnectivityManagerDelegate {
+class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, LocationManagerDelegate, PermissionManagerDelegate, ConnectivityManagerDelegate, ErrorViewControllerDelegate {
     var webView: WKWebView!
     private let locationManager = LocationManager.shared
     private let permissionManager = PermissionManager.shared
     private let connectivityManager = ConnectivityManager.shared
+    private let offlineContentManager = OfflineContentManager.shared
     private let lightImpactFeedback = UIImpactFeedbackGenerator(style: .light)
     private let mediumImpactFeedback = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactFeedback = UIImpactFeedbackGenerator(style: .heavy)
@@ -19,6 +20,21 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     // Connectivity monitoring
     private var connectivityAlert: UIAlertController?
+    
+    // Error handling
+    private var currentErrorViewController: ErrorViewController?
+    private var retryCount = 0
+    private let maxRetryCount = 3
+    
+    // Loading state
+    private var isLoading = false
+    private var loadingStartTime: Date?
+    
+    // MARK: - Error Handling Properties
+    
+    private var lastError: Error?
+    private var errorRetryTimer: Timer?
+    private var isShowingError = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -76,6 +92,11 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         userContentController.add(self, name: "nativeMessage")
         userContentController.add(self, name: "requestPermission")
         userContentController.add(self, name: "getPermissionStatus")
+        userContentController.add(self, name: "connectionRestored")
+        userContentController.add(self, name: "connectionLost")
+        userContentController.add(self, name: "retryConnection")
+        userContentController.add(self, name: "checkSettings")
+        userContentController.add(self, name: "enableOfflineMode")
         
         // Enhanced JS bridge with permission handling
         let jsSource = """
@@ -173,6 +194,16 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             handleRequestPermission(message: message)
         case "getPermissionStatus":
             handleGetPermissionStatus(message: message)
+        case "connectionRestored":
+            handleConnectionRestored()
+        case "connectionLost":
+            handleConnectionLost()
+        case "retryConnection":
+            handleRetryConnection()
+        case "checkSettings":
+            handleCheckSettings()
+        case "enableOfflineMode":
+            handleEnableOfflineMode()
         default:
             break
         }
@@ -420,12 +451,20 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        startLoading()
         lightImpactFeedback.impactOccurred()
+        
+        // Start timeout check
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            self?.checkLoadingTimeout()
+        }
     }
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        stopLoading()
         mediumImpactFeedback.impactOccurred()
-        
+        // Cache the page
+        offlineContentManager.cacheCurrentPage(webView)
         // Inject permissions to WebView
         permissionManager.injectPermissionStatusToWebView(webView)
         
@@ -445,6 +484,21 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
                 console.log('ZooboxBridge is available');
             }
             console.log('🔐 Available permissions:', window.zooboxPermissions);
+            
+            // Add offline detection
+            window.addEventListener('online', function() {
+                console.log('🌐 Internet connection restored');
+                if (window.webkit && window.webkit.messageHandlers.connectionRestored) {
+                    window.webkit.messageHandlers.connectionRestored.postMessage({});
+                }
+            });
+            
+            window.addEventListener('offline', function() {
+                console.log('📱 Internet connection lost');
+                if (window.webkit && window.webkit.messageHandlers.connectionLost) {
+                    window.webkit.messageHandlers.connectionLost.postMessage({});
+                }
+            });
             
             // Comprehensive Permission Override System
             (function() {
@@ -756,13 +810,32 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     }
     
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        stopLoading()
         heavyImpactFeedback.impactOccurred()
-        showError(error)
+        handleWebViewError(error)
     }
     
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        stopLoading()
         heavyImpactFeedback.impactOccurred()
-        showError(error)
+        handleWebViewError(error)
+    }
+    
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        // Handle redirects
+        print("🔄 Server redirect detected")
+    }
+    
+    func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        // Handle authentication challenges
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+            if let serverTrust = challenge.protectionSpace.serverTrust {
+                let credential = URLCredential(trust: serverTrust)
+                completionHandler(.useCredential, credential)
+                return
+            }
+        }
+        completionHandler(.performDefaultHandling, nil)
     }
     
     // MARK: - WKUIDelegate (Camera & Photo File Upload)
@@ -848,12 +921,46 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         }
     }
     
-    private func showError(_ error: Error) {
-        let alert = UIAlertController(title: "Load Error", message: error.localizedDescription, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Retry", style: .default, handler: { _ in
-            self.loadMainSite()
-        }))
-        present(alert, animated: true)
+    // MARK: - Error Handling Methods
+    
+    private func handleWebViewError(_ error: Error) {
+        lastError = error
+        let errorType = ErrorViewController.createErrorType(from: error)
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.showError(errorType, error: error)
+        }
+    }
+    
+    private func showError(_ errorType: ErrorType, error: Error) {
+        let errorVC = ErrorViewController(errorType: errorType)
+        errorVC.delegate = self
+        addChild(errorVC)
+        view.addSubview(errorVC.view)
+        errorVC.didMove(toParent: self)
+        
+        errorVC.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            errorVC.view.topAnchor.constraint(equalTo: view.topAnchor),
+            errorVC.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            errorVC.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            errorVC.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        
+        currentErrorViewController = errorVC
+        isShowingError = true
+    }
+    
+    private func hideError() {
+        guard let errorVC = currentErrorViewController else { return }
+        
+        errorVC.willMove(toParent: nil)
+        errorVC.view.removeFromSuperview()
+        errorVC.removeFromParent()
+        
+        currentErrorViewController = nil
+        isShowingError = false
+        lastError = nil
     }
     
     // MARK: - Cookie Management Methods (Optional)
@@ -877,6 +984,11 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "nativeMessage")
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "requestPermission")
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "getPermissionStatus")
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "connectionRestored")
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "connectionLost")
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "retryConnection")
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "checkSettings")
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "enableOfflineMode")
     }
     
     // MARK: - PermissionManagerDelegate
@@ -923,7 +1035,19 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
                         self.connectivityAlert = nil
                     }
                 }
-                print("📡 Internet connection restored")
+                
+                // Hide any error views
+                if self.isShowingError {
+                    self.hideError()
+                }
+                
+                // If we were trying to retry, now reload the page
+                if self.retryCount > 0 {
+                    self.resetRetryCount()
+                    self.loadMainSite()
+                }
+                
+                print("📡 Internet connection restored - auto-reloading")
                 
             case .disconnected:
                 // Show connectivity alert if not already showing
@@ -971,8 +1095,23 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             }
         })
         
-        alert.addAction(UIAlertAction(title: "Retry", style: .cancel) { _ in
-            self.connectivityManager.checkConnectivity()
+        alert.addAction(UIAlertAction(title: "Retry", style: .default) { _ in
+            // Immediately check connectivity and reload if available
+            let connectivity = self.connectivityManager.checkConnectivity()
+            if connectivity.isInternetConnected {
+                // Test the actual connection before reloading
+                self.testConnection { isWorking in
+                    if isWorking {
+                        self.loadMainSite()
+                    } else {
+                        // If still no connection, start retry process
+                        self.retryLoading()
+                    }
+                }
+            } else {
+                // If still no connection, start retry process
+                self.retryLoading()
+            }
         })
         
         connectivityAlert = alert
@@ -996,6 +1135,175 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         
         connectivityAlert = alert
         present(alert, animated: true)
+    }
+    
+    // MARK: - ErrorViewControllerDelegate
+    
+    func errorViewControllerDidTapRetry(_ controller: ErrorViewController) {
+        retryLoading()
+    }
+    
+    func errorViewControllerDidTapSettings(_ controller: ErrorViewController) {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+    }
+    
+    func errorViewControllerDidTapCheckConnection(_ controller: ErrorViewController) {
+        connectivityManager.checkConnectivity()
+    }
+    
+    // MARK: - Error Handling Methods
+    
+    private func retryLoading() {
+        retryCount += 1
+        print("🔄 Retry attempt \(retryCount)/\(maxRetryCount)")
+        
+        // Add a small delay to allow system to detect restored connection
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            
+            // First check if we have connectivity
+            let connectivity = self.connectivityManager.checkConnectivity()
+            print("📡 Connectivity check: GPS=\(connectivity.isGPSEnabled), Internet=\(connectivity.isInternetConnected)")
+            
+            if connectivity.isInternetConnected {
+                // Test the actual connection before reloading
+                print("🌐 Testing connection...")
+                self.testConnection { isWorking in
+                    print("🌐 Connection test result: \(isWorking)")
+                    if isWorking {
+                        // Connection is available, hide any error dialogs and reload
+                        self.hideError()
+                        self.loadMainSite()
+                    } else {
+                        // Connection test failed, show simple error
+                        self.showSimpleNoInternetDialog()
+                    }
+                }
+            } else {
+                // Still no connection, show simple error
+                self.showSimpleNoInternetDialog()
+            }
+        }
+    }
+    
+    private func showSimpleNoInternetDialog() {
+        let alert = UIAlertController(
+            title: "No Internet Connection",
+            message: "Please check your Wi-Fi or cellular data connection.",
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "Retry", style: .default) { _ in
+            self.retryLoading()
+        })
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        present(alert, animated: true)
+    }
+    
+    // MARK: - Loading State Management
+    
+    private func startLoading() {
+        isLoading = true
+        loadingStartTime = Date()
+        retryCount = 0
+        hideError()
+    }
+    
+    private func stopLoading() {
+        isLoading = false
+        loadingStartTime = nil
+    }
+    
+    private func checkLoadingTimeout() {
+        guard let startTime = loadingStartTime else { return }
+        
+        let timeout: TimeInterval = 30 // 30 seconds
+        if Date().timeIntervalSince(startTime) > timeout {
+            handleWebViewError(NSError(domain: "Timeout", code: -1, userInfo: [NSLocalizedDescriptionKey: "Loading timeout"]))
+        }
+    }
+    
+    // MARK: - Connection and Offline Handlers
+    
+    private func resetRetryCount() {
+        retryCount = 0
+        print("🔄 Retry count reset")
+    }
+    
+    private func testConnection(completion: @escaping (Bool) -> Void) {
+        // Test connection by trying to reach a reliable endpoint
+        guard let url = URL(string: "https://www.apple.com") else {
+            completion(false)
+            return
+        }
+        
+        let task = URLSession.shared.dataTask(with: url) { _, response, error in
+            DispatchQueue.main.async {
+                if let httpResponse = response as? HTTPURLResponse {
+                    completion(httpResponse.statusCode == 200)
+                } else {
+                    completion(error == nil)
+                }
+            }
+        }
+        task.resume()
+    }
+    
+    private func handleConnectionRestored() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Reset retry count when connection is restored
+            self.resetRetryCount()
+            
+            // Hide any error views
+            if self.isShowingError {
+                self.hideError()
+            }
+            
+            print("🌐 Connection restored from JavaScript")
+        }
+    }
+    
+    private func handleConnectionLost() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Show simple error dialog
+            self.showSimpleNoInternetDialog()
+            
+            print("📱 Connection lost from JavaScript")
+        }
+    }
+    
+    private func handleRetryConnection() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.retryLoading()
+        }
+    }
+    
+    private func handleCheckSettings() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        }
+    }
+    
+    private func handleEnableOfflineMode() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.showSimpleNoInternetDialog()
+        }
     }
 }
 
