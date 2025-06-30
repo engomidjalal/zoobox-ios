@@ -6,8 +6,18 @@
     <false/>
     <key>NSAppTransportSecurity</key>
     <dict>
-        <key>NSAllowsArbitraryLoads</key>
-        <true/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>mikmik.site</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.2</string>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <false/>
+            </dict>
+        </dict>
     </dict>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>Zoobox needs your location to show nearby services and enable deliveries.</string>
@@ -44,6 +54,18 @@
         <string>location</string>
         <string>remote-notification</string>
     </array>
+    <key>CFBundleDisplayName</key>
+    <string>Zoobox</string>
+    <key>CFBundleName</key>
+    <string>Zoobox</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.shopping</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
 </dict>
 </plist>
 

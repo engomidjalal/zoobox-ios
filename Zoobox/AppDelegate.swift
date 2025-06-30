@@ -41,6 +41,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Clean up any resources related to discarded scenes
     }
 
+    func applicationWillTerminate(_ application: UIApplication) {
+        // Backup cookies before app termination
+        print("🍪 App will terminate - backing up cookies")
+        // The CookieManager will handle this automatically via notification observers
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        // Backup cookies when app goes to background
+        print("🍪 App entered background - backing up cookies")
+        // The CookieManager will handle this automatically via notification observers
+    }
+
     // MARK: - Remote Notification Registration
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         // Pass device token to FCM

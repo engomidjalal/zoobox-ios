@@ -3,12 +3,13 @@ import WebKit
 import CoreLocation
 import MobileCoreServices
 
-class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, LocationManagerDelegate, PermissionManagerDelegate, ConnectivityManagerDelegate, ErrorViewControllerDelegate {
+class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, LocationManagerDelegate, PermissionManagerDelegate, ConnectivityManagerDelegate, ErrorViewControllerDelegate, CookieManagerDelegate {
     var webView: WKWebView!
     private let locationManager = LocationManager.shared
     private let permissionManager = PermissionManager.shared
     private let connectivityManager = ConnectivityManager.shared
     private let offlineContentManager = OfflineContentManager.shared
+    private let cookieManager = CookieManager.shared
     private let lightImpactFeedback = UIImpactFeedbackGenerator(style: .light)
     private let mediumImpactFeedback = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactFeedback = UIImpactFeedbackGenerator(style: .heavy)
@@ -45,6 +46,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         setupLocationManager()
         setupPermissionManager()
         setupConnectivityManager()
+        setupCookieManager()
         setupWebView()
         loadMainSite()
         prepareHapticFeedback()
@@ -76,6 +78,10 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     private func setupConnectivityManager() {
         connectivityManager.delegate = self
+    }
+    
+    private func setupCookieManager() {
+        cookieManager.delegate = self
     }
     
     private func setupWebView() {
@@ -233,6 +239,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         webView.navigationDelegate = self
         webView.uiDelegate = self
         
+        // Enable swipe-to-go-back gesture (iOS 7+)
+        webView.allowsBackForwardNavigationGestures = true
+        
         // Set up refresh control for webview
         refreshControl = UIRefreshControl()
         refreshControl.tintColor = .zooboxRed
@@ -356,6 +365,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     }
     
     private func loadMainSite() {
+        // Restore cookies before loading the site
+        webView.restoreCookies()
+        
         if let url = URL(string: "https://mikmik.site") {
             let request = URLRequest(url: url)
             webView.load(request)
@@ -686,6 +698,11 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         
         // Cache the page
         offlineContentManager.cacheCurrentPage(webView)
+        
+        // Backup cookies after page load
+        if cookieManager.shouldBackupCookies() {
+            webView.backupCookies()
+        }
         
         // Inject permissions to WebView FIRST - before any other scripts
         permissionManager.injectPermissionStatusToWebView(webView)
@@ -1235,16 +1252,27 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         lastError = nil
     }
     
-    // MARK: - Cookie Management Methods (Optional)
+    // MARK: - Cookie Management Methods
     private func saveCookies() {
-        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-            for cookie in cookies {
-                print("Cookie: \(cookie.name) = \(cookie.value)")
-            }
-        }
+        webView.backupCookies()
     }
+    
     private func loadSavedCookies() {
-        // Optional: implement cookie loading here
+        webView.restoreCookies()
+    }
+    
+    // MARK: - CookieManagerDelegate
+    
+    func cookieManager(_ manager: CookieManager, didSaveCookies count: Int) {
+        print("🍪 Successfully backed up \(count) cookies")
+    }
+    
+    func cookieManager(_ manager: CookieManager, didRestoreCookies count: Int) {
+        print("🍪 Successfully restored \(count) cookies")
+    }
+    
+    func cookieManager(_ manager: CookieManager, didEncounterError error: Error) {
+        print("🍪 Cookie manager error: \(error.localizedDescription)")
     }
     
     deinit {

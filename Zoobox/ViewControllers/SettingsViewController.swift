@@ -11,6 +11,7 @@ class SettingsViewController: UIViewController {
     weak var delegate: SettingsViewControllerDelegate?
     private let userExperienceManager = UserExperienceManager.shared
     private let offlineContentManager = OfflineContentManager.shared
+    private let cookieManager = CookieManager.shared
     
     private var currentPreferences: UserPreferences
     
@@ -232,6 +233,9 @@ extension SettingsViewController {
         case .cacheSize:
             let size = offlineContentManager.getCacheSize()
             cell.detailTextLabel?.text = formatFileSize(size)
+        case .cookieCount:
+            let count = cookieManager.getBackupCookieCount()
+            cell.detailTextLabel?.text = "\(count) cookies"
         case .version:
             if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
                 cell.detailTextLabel?.text = version
@@ -356,6 +360,7 @@ enum SettingsSection {
         case .performance:
             return [
                 SettingsRow(key: .cacheSize, title: "Cache Size", subtitle: "Current cached content", type: .info),
+                SettingsRow(key: .cookieCount, title: "Saved Cookies", subtitle: "Number of backed up cookies", type: .info),
                 SettingsRow(key: .clearCache, title: "Clear Cache", subtitle: "Remove all cached content", type: .action, action: .clearCache)
             ]
         case .about:
@@ -384,7 +389,7 @@ struct SettingsRow {
 }
 
 enum SettingsRowKey {
-    case hapticFeedback, soundEffects, autoRetry, offlineMode, fontSize, animationSpeed, darkMode, cacheSize, clearCache, version, about
+    case hapticFeedback, soundEffects, autoRetry, offlineMode, fontSize, animationSpeed, darkMode, cacheSize, clearCache, version, about, cookieCount
 }
 
 enum CellType {
