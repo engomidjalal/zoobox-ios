@@ -10,6 +10,7 @@
 		2E3A612F2E11428200CBAEAD /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 2E3A612E2E11428200CBAEAD /* FirebaseAnalytics */; };
 		2E3A61312E11428200CBAEAD /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2E3A61302E11428200CBAEAD /* FirebaseCore */; };
 		2E3A61332E11428200CBAEAD /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 2E3A61322E11428200CBAEAD /* FirebaseMessaging */; };
+		2EDBCC682E14111000004DAF /* zoobox_notification.wav in Resources */ = {isa = PBXBuildFile; fileRef = 2EDBCC672E14111000004DAF /* zoobox_notification.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +34,7 @@
 		2EA1C5CC2E0EF2C600567827 /* Zoobox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zoobox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2EA1C5E22E0EF2C700567827 /* ZooboxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZooboxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2EA1C5EC2E0EF2C700567827 /* ZooboxUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZooboxUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2EDBCC672E14111000004DAF /* zoobox_notification.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = zoobox_notification.wav; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -97,6 +99,7 @@
 		2EA1C5C32E0EF2C500567827 = {
 			isa = PBXGroup;
 			children = (
+				2EDBCC672E14111000004DAF /* zoobox_notification.wav */,
 				2EA1C5CE2E0EF2C600567827 /* Zoobox */,
 				2EA1C5E52E0EF2C700567827 /* ZooboxTests */,
 				2EA1C5EF2E0EF2C700567827 /* ZooboxUITests */,
@@ -240,6 +243,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2EDBCC682E14111000004DAF /* zoobox_notification.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -33,8 +33,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Initialize connectivity monitoring
         setupConnectivityMonitoring()
         
-        // Register background tasks for order tracking
-        BackgroundTaskManager.shared.registerBackgroundTasks()
+        // Background tasks removed - using FCM only
         
         return true
     }
@@ -121,8 +120,8 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        // Handle order tracking notification actions
-        OrderNotificationManager.shared.handleNotificationAction(response)
+        // Handle FCM notification actions
+        // Order tracking notifications removed - using FCM only
         completionHandler()
     }
 }

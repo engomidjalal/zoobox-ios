@@ -30,7 +30,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func handleDeepLink(url: URL) {
         print("🔗 Handling deep link: \(url)")
         
-        // Check if this is an order tracking URL
+        // Check if this is an order tracking URL (from FCM notifications)
         if url.host == "mikmik.site" && url.path.contains("track_order") {
             // Extract order information from URL
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -38,16 +38,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let date = components?.queryItems?.first { $0.name == "date" }?.value
             
             if let orderId = orderId, let date = date {
-                print("🔗 Order tracking deep link - Order ID: \(orderId), Date: \(date)")
-                // You can navigate to a specific order tracking view here
-                // For now, we'll just open the URL in the web view
+                print("🔗 Order tracking deep link from FCM - Order ID: \(orderId), Date: \(date)")
+                // Open the tracking URL in the web view
                 openOrderTrackingURL(url: url)
             }
         }
     }
     
     private func openOrderTrackingURL(url: URL) {
-        // Navigate to the main view controller and open the tracking URL
+        // Navigate to the main view controller and open the tracking URL (from FCM)
         if let mainVC = window?.rootViewController as? MainViewController {
             mainVC.loadURL(url)
         } else {
@@ -66,7 +65,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         UIView.transition(with: window!, duration: 0.5, options: .transitionCrossDissolve, animations: {
             self.window?.rootViewController = mainVC
         }, completion: { _ in
-            // Check for pending order tracking URL
+            // Check for pending order tracking URL (from FCM)
             if let pendingURLString = UserDefaults.standard.string(forKey: "PendingOrderTrackingURL"),
                let pendingURL = URL(string: pendingURLString) {
                 mainVC.loadURL(pendingURL)

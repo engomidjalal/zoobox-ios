@@ -318,8 +318,8 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
     private func postFCMTokenAndUserIdIfNeeded() async {
         // Get FCM_token from cookie
         let fcmToken = await self.getFCMTokenFromCookie()
-        // Get user_id from OrderTrackingCookieManager
-        let userId = await OrderTrackingCookieManager.shared.getUserId()
+        // Get user_id from cookies directly
+        let userId = await extractUserIdFromCookies()
         
         guard let fcmToken = fcmToken, !fcmToken.isEmpty,
               let userId = userId, !userId.isEmpty else {
@@ -353,6 +353,30 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
             }
         }
         task.resume()
+    }
+    
+    /// Extract user_id from cookies directly
+    private func extractUserIdFromCookies() async -> String? {
+        do {
+            let cookies = try await websiteDataStore.httpCookieStore.allCookies()
+            
+            // Look for user_id cookie for mikmik.site
+            let targetCookie = cookies.first { cookie in
+                cookie.domain.contains("mikmik.site") && cookie.name == "user_id"
+            }
+            
+            if let targetCookie = targetCookie {
+                print("🔥 Found user_id cookie: \(targetCookie.value)")
+                return targetCookie.value
+            } else {
+                print("🔥 No user_id cookie found")
+                return nil
+            }
+            
+        } catch {
+            print("🔥 Error accessing cookies: \(error)")
+            return nil
+        }
     }
     
     /// Public function to manually trigger posting both cookies to API

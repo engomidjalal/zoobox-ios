@@ -22,7 +22,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     private let connectivityManager = ConnectivityManager()
     private let cookieManager = CookieManager()
     private let offlineContentManager = OfflineContentManager()
-    private let orderTrackingService = OrderTrackingService.shared
+    // Order tracking service removed - using FCM only
     private let fcmTokenCookieManager = FCMTokenCookieManager.shared
     
     // MARK: - Haptic Feedback
@@ -30,8 +30,8 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     private let mediumImpactFeedback = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactFeedback = UIImpactFeedbackGenerator(style: .heavy)
     
-    // MARK: - Order Tracking Integration
-    // Backend tracking only - no UI elements needed
+    // MARK: - FCM Integration
+    // FCM notifications only - no API polling
     
     // Connectivity monitoring
     private var connectivityAlert: UIAlertController?
@@ -55,8 +55,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         
         setupWebView()
         
-        // Only setup backend order tracking (no UI)
-        setupBackendOrderTracking()
+        // FCM setup only - no API polling
         
         loadMainSite()
         prepareHapticFeedback()
@@ -73,12 +72,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         // Ensure FCM token is saved as cookie when view appears
         fcmTokenCookieManager.forceSaveCurrentFCMTokenAsCookie()
         
-        // Start order tracking if user is logged in - with delay to ensure view is fully loaded
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            Task {
-                await self?.startOrderTrackingIfNeeded()
-            }
-        }
+        // FCM token management only - no API polling
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -88,48 +82,10 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         connectivityManager.stopMonitoring()
     }
     
-    // MARK: - Order Tracking Setup
-    private func setupBackendOrderTracking() {
-        print("📦 Starting backend order tracking setup...")
-        
-        // Observe order tracking service changes with proper error handling
-        setupKVOObservers()
-        
-        print("📦 Backend order tracking setup completed")
-    }
+    // MARK: - FCM Setup
+    // FCM notifications only - no API polling needed
     
-    private func setupKVOObservers() {
-        print("📦 Setting up backend order tracking...")
-        
-        // No UI updates needed - just backend tracking
-        print("📦 Backend order tracking active")
-    }
-    
-    private func updateOrderTrackingButtonAppearance() {
-        // Removed - no UI needed for backend tracking
-    }
-    
-    private func startOrderTrackingIfNeeded() async {
-        do {
-            // Check if user is logged in (has cookies)
-            guard await OrderTrackingCookieManager.shared.validateCookies() else {
-                print("📦 User not logged in, skipping order tracking")
-                return
-            }
-            
-            // Start order tracking if not already active
-            if !orderTrackingService.isTracking {
-                await orderTrackingService.startTracking()
-                print("📦 Order tracking started successfully")
-            } else {
-                print("📦 Order tracking already active")
-            }
-        } catch {
-            print("⚠️ Failed to start order tracking: \(error)")
-        }
-    }
-    
-    // MARK: - Public Methods for Order Tracking
+    // MARK: - Public Methods
     func loadURL(_ url: URL) {
         let request = URLRequest(url: url)
         webView.load(request)
@@ -151,41 +107,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     private func setupCookieManager() {
         // cookieManager.delegate = self
-        
-        // Listen for user login/logout notifications
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(userDidLogin),
-            name: OrderTrackingCookieManager.userDidLoginNotification,
-            object: nil
-        )
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(userDidLogout),
-            name: OrderTrackingCookieManager.userDidLogoutNotification,
-            object: nil
-        )
-    }
-    
-    @objc private func userDidLogin(_ notification: Notification) {
-        if let userId = notification.userInfo?["userId"] as? String {
-            print("📦 User logged in notification received: \(userId)")
-            
-            // Ensure FCM token is saved as cookie when user logs in
-            fcmTokenCookieManager.forceSaveCurrentFCMTokenAsCookie()
-            
-            Task {
-                await startOrderTrackingIfNeeded()
-            }
-        }
-    }
-    
-    @objc private func userDidLogout(_ notification: Notification) {
-        if let userId = notification.userInfo?["userId"] as? String {
-            print("📦 User logged out notification received: \(userId)")
-            orderTrackingService.stopTracking()
-        }
+        // FCM token management only - no order tracking
     }
     
     private func setupWebView() {
