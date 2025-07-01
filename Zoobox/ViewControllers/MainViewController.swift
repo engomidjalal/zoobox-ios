@@ -916,6 +916,231 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         completionHandler(.performDefaultHandling, nil)
     }
     
+    // MARK: - Deep Link Handling
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+        
+        // Check if this is an external app link
+        let handled = handleExternalAppLink(url: url)
+        if handled {
+            print("🔗 Deep link handled: \(url)")
+            decisionHandler(.cancel)
+            return
+        }
+        
+        // Allow normal navigation for all other URLs
+        decisionHandler(.allow)
+    }
+    
+    private func handleExternalAppLink(url: URL) -> Bool {
+        let urlString = url.absoluteString.lowercased()
+        
+        // Phone links
+        if urlString.hasPrefix("tel:") {
+            return openPhoneApp(with: url)
+        }
+        
+        // WhatsApp links
+        if urlString.contains("whatsapp") || urlString.contains("wa.me") {
+            return openWhatsApp(with: url)
+        }
+        
+        // Viber links
+        if urlString.contains("viber") {
+            return openViber(with: url)
+        }
+        
+        // Telegram links
+        if urlString.contains("telegram") || urlString.contains("t.me") {
+            return openTelegram(with: url)
+        }
+        
+        // Email links
+        if urlString.hasPrefix("mailto:") {
+            return openEmailApp(with: url)
+        }
+        
+        // SMS links
+        if urlString.hasPrefix("sms:") {
+            return openSMSApp(with: url)
+        }
+        
+        // Maps links
+        if urlString.contains("maps.apple.com") || urlString.contains("maps.google.com") {
+            return openMapsApp(with: url)
+        }
+        
+        return false
+    }
+    
+    private func openPhoneApp(with url: URL) -> Bool {
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url) { success in
+                if success {
+                    print("📞 Phone app opened successfully")
+                } else {
+                    print("❌ Failed to open phone app")
+                }
+            }
+            return true
+        }
+        return false
+    }
+    
+    private func openWhatsApp(with url: URL) -> Bool {
+        // Handle different WhatsApp URL formats
+        var whatsappURL = url
+        
+        // Convert web URLs to WhatsApp scheme
+        if url.absoluteString.contains("wa.me") {
+            let phoneNumber = url.lastPathComponent
+            whatsappURL = URL(string: "whatsapp://send?phone=\(phoneNumber)") ?? url
+        } else if url.absoluteString.contains("whatsapp.com") {
+            // Extract phone number from WhatsApp web URL
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            if let phoneParam = components?.queryItems?.first(where: { $0.name == "phone" })?.value {
+                whatsappURL = URL(string: "whatsapp://send?phone=\(phoneParam)") ?? url
+            }
+        }
+        
+        if UIApplication.shared.canOpenURL(whatsappURL) {
+            UIApplication.shared.open(whatsappURL) { success in
+                if success {
+                    print("💬 WhatsApp opened successfully")
+                } else {
+                    print("❌ Failed to open WhatsApp")
+                    // Fallback to App Store if WhatsApp is not installed
+                    self.openAppStore(for: "whatsapp")
+                }
+            }
+            return true
+        } else {
+            // Fallback to App Store
+            openAppStore(for: "whatsapp")
+            return true
+        }
+    }
+    
+    private func openViber(with url: URL) -> Bool {
+        // Handle different Viber URL formats
+        var viberURL = url
+        
+        // Convert web URLs to Viber scheme
+        if url.absoluteString.contains("viber.com") {
+            let phoneNumber = url.lastPathComponent
+            viberURL = URL(string: "viber://chat?number=\(phoneNumber)") ?? url
+        }
+        
+        if UIApplication.shared.canOpenURL(viberURL) {
+            UIApplication.shared.open(viberURL) { success in
+                if success {
+                    print("📱 Viber opened successfully")
+                } else {
+                    print("❌ Failed to open Viber")
+                    // Fallback to App Store if Viber is not installed
+                    self.openAppStore(for: "viber")
+                }
+            }
+            return true
+        } else {
+            // Fallback to App Store
+            openAppStore(for: "viber")
+            return true
+        }
+    }
+    
+    private func openTelegram(with url: URL) -> Bool {
+        // Handle different Telegram URL formats
+        var telegramURL = url
+        
+        // Convert web URLs to Telegram scheme
+        if url.absoluteString.contains("t.me") {
+            let username = url.lastPathComponent
+            telegramURL = URL(string: "telegram://resolve?domain=\(username)") ?? url
+        }
+        
+        if UIApplication.shared.canOpenURL(telegramURL) {
+            UIApplication.shared.open(telegramURL) { success in
+                if success {
+                    print("📨 Telegram opened successfully")
+                } else {
+                    print("❌ Failed to open Telegram")
+                    // Fallback to App Store if Telegram is not installed
+                    self.openAppStore(for: "telegram")
+                }
+            }
+            return true
+        } else {
+            // Fallback to App Store
+            openAppStore(for: "telegram")
+            return true
+        }
+    }
+    
+    private func openEmailApp(with url: URL) -> Bool {
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url) { success in
+                if success {
+                    print("📧 Email app opened successfully")
+                } else {
+                    print("❌ Failed to open email app")
+                }
+            }
+            return true
+        }
+        return false
+    }
+    
+    private func openSMSApp(with url: URL) -> Bool {
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url) { success in
+                if success {
+                    print("💬 SMS app opened successfully")
+                } else {
+                    print("❌ Failed to open SMS app")
+                }
+            }
+            return true
+        }
+        return false
+    }
+    
+    private func openMapsApp(with url: URL) -> Bool {
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url) { success in
+                if success {
+                    print("🗺️ Maps app opened successfully")
+                } else {
+                    print("❌ Failed to open maps app")
+                }
+            }
+            return true
+        }
+        return false
+    }
+    
+    private func openAppStore(for appName: String) {
+        let appStoreURLs = [
+            "whatsapp": "https://apps.apple.com/app/whatsapp-messenger/id310633997",
+            "viber": "https://apps.apple.com/app/viber/id382617920",
+            "telegram": "https://apps.apple.com/app/telegram-messenger/id686449807"
+        ]
+        
+        if let appStoreURL = appStoreURLs[appName],
+           let url = URL(string: appStoreURL) {
+            UIApplication.shared.open(url) { success in
+                if success {
+                    print("📱 App Store opened for \(appName)")
+                } else {
+                    print("❌ Failed to open App Store for \(appName)")
+                }
+            }
+        }
+    }
+    
     // MARK: - WKUIDelegate (Camera & Photo File Upload)
     func webView(_ webView: WKWebView,
                  runOpenPanelWith parameters: Any,
