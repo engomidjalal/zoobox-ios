@@ -2,33 +2,39 @@ import UIKit
 import WebKit
 import CoreLocation
 import MobileCoreServices
+import SwiftUI
 
-class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, LocationManagerDelegate, PermissionManagerDelegate, ConnectivityManagerDelegate, ErrorViewControllerDelegate, CookieManagerDelegate {
-    var webView: WKWebView!
-    private let locationManager = LocationManager.shared
-    private let permissionManager = PermissionManager.shared
-    private let connectivityManager = ConnectivityManager.shared
-    private let offlineContentManager = OfflineContentManager.shared
-    private let cookieManager = CookieManager.shared
+class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, LocationManagerDelegate, PermissionManagerDelegate, ConnectivityManagerDelegate, ErrorViewControllerDelegate {
+    // MARK: - Properties
+    private var webView: WKWebView!
+    private var refreshControl: UIRefreshControl!
+    private var currentErrorViewController: ErrorViewController?
+    private var isShowingError = false
+    private var lastError: Error?
+    private var retryCount = 0
+    private let maxRetryCount = 3
+    private var hasInjectedPermissionScript = false
+    private var fileUploadCompletionHandler: (([URL]?) -> Void)?
+    
+    // MARK: - Managers
+    private let locationManager = LocationManager()
+    private let permissionManager = PermissionManager()
+    private let connectivityManager = ConnectivityManager()
+    private let cookieManager = CookieManager()
+    private let offlineContentManager = OfflineContentManager()
+    private let orderTrackingService = OrderTrackingService.shared
+    private let fcmTokenCookieManager = FCMTokenCookieManager.shared
+    
+    // MARK: - Haptic Feedback
     private let lightImpactFeedback = UIImpactFeedbackGenerator(style: .light)
     private let mediumImpactFeedback = UIImpactFeedbackGenerator(style: .medium)
     private let heavyImpactFeedback = UIImpactFeedbackGenerator(style: .heavy)
     
-    // MARK: - Pull to Refresh
-    private var refreshControl: UIRefreshControl!
-    
-    private var fileUploadCompletionHandler: (([URL]?) -> Void)?
-    
-    // Add flag to prevent multiple script injections
-    private var hasInjectedPermissionScript = false
+    // MARK: - Order Tracking Integration
+    // Backend tracking only - no UI elements needed
     
     // Connectivity monitoring
     private var connectivityAlert: UIAlertController?
-    
-    // Error handling
-    private var currentErrorViewController: ErrorViewController?
-    private var retryCount = 0
-    private let maxRetryCount = 3
     
     // Loading state
     private var isLoading = false
@@ -36,18 +42,22 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     // MARK: - Error Handling Properties
     
-    private var lastError: Error?
     private var errorRetryTimer: Timer?
-    private var isShowingError = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        
         view.backgroundColor = .zooboxBackground
         setupLocationManager()
         setupPermissionManager()
         setupConnectivityManager()
         setupCookieManager()
+        
         setupWebView()
+        
+        // Only setup backend order tracking (no UI)
+        setupBackendOrderTracking()
+        
         loadMainSite()
         prepareHapticFeedback()
     }
@@ -55,8 +65,20 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
+        print("📦 MainViewController viewDidAppear")
+        
         // Start monitoring connectivity
         connectivityManager.startMonitoring()
+        
+        // Ensure FCM token is saved as cookie when view appears
+        fcmTokenCookieManager.forceSaveCurrentFCMTokenAsCookie()
+        
+        // Start order tracking if user is logged in - with delay to ensure view is fully loaded
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            Task {
+                await self?.startOrderTrackingIfNeeded()
+            }
+        }
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -64,6 +86,53 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         
         // Stop monitoring when leaving this view
         connectivityManager.stopMonitoring()
+    }
+    
+    // MARK: - Order Tracking Setup
+    private func setupBackendOrderTracking() {
+        print("📦 Starting backend order tracking setup...")
+        
+        // Observe order tracking service changes with proper error handling
+        setupKVOObservers()
+        
+        print("📦 Backend order tracking setup completed")
+    }
+    
+    private func setupKVOObservers() {
+        print("📦 Setting up backend order tracking...")
+        
+        // No UI updates needed - just backend tracking
+        print("📦 Backend order tracking active")
+    }
+    
+    private func updateOrderTrackingButtonAppearance() {
+        // Removed - no UI needed for backend tracking
+    }
+    
+    private func startOrderTrackingIfNeeded() async {
+        do {
+            // Check if user is logged in (has cookies)
+            guard await OrderTrackingCookieManager.shared.validateCookies() else {
+                print("📦 User not logged in, skipping order tracking")
+                return
+            }
+            
+            // Start order tracking if not already active
+            if !orderTrackingService.isTracking {
+                await orderTrackingService.startTracking()
+                print("📦 Order tracking started successfully")
+            } else {
+                print("📦 Order tracking already active")
+            }
+        } catch {
+            print("⚠️ Failed to start order tracking: \(error)")
+        }
+    }
+    
+    // MARK: - Public Methods for Order Tracking
+    func loadURL(_ url: URL) {
+        let request = URLRequest(url: url)
+        webView.load(request)
     }
     
     private func setupLocationManager() {
@@ -81,7 +150,42 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     }
     
     private func setupCookieManager() {
-        cookieManager.delegate = self
+        // cookieManager.delegate = self
+        
+        // Listen for user login/logout notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(userDidLogin),
+            name: OrderTrackingCookieManager.userDidLoginNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(userDidLogout),
+            name: OrderTrackingCookieManager.userDidLogoutNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func userDidLogin(_ notification: Notification) {
+        if let userId = notification.userInfo?["userId"] as? String {
+            print("📦 User logged in notification received: \(userId)")
+            
+            // Ensure FCM token is saved as cookie when user logs in
+            fcmTokenCookieManager.forceSaveCurrentFCMTokenAsCookie()
+            
+            Task {
+                await startOrderTrackingIfNeeded()
+            }
+        }
+    }
+    
+    @objc private func userDidLogout(_ notification: Notification) {
+        if let userId = notification.userInfo?["userId"] as? String {
+            print("📦 User logged out notification received: \(userId)")
+            orderTrackingService.stopTracking()
+        }
     }
     
     private func setupWebView() {
@@ -239,6 +343,10 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         webView.navigationDelegate = self
         webView.uiDelegate = self
         
+        // Set a visible background color for debugging
+        webView.backgroundColor = UIColor.white
+        webView.isOpaque = true
+        
         // Enable swipe-to-go-back gesture (iOS 7+)
         webView.allowsBackForwardNavigationGestures = true
         
@@ -257,6 +365,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         
         // Set up pull-to-refresh
         refreshControl.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
+        
+        // Ensure FCM token cookie is available
+        setupFCMTokenCookie()
         
         view.addSubview(webView)
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -365,12 +476,17 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     }
     
     private func loadMainSite() {
+        print("🌐 Loading main site...")
+        
         // Restore cookies before loading the site
         webView.restoreCookies()
         
         if let url = URL(string: "https://mikmik.site") {
+            print("🌐 Loading URL: \(url)")
             let request = URLRequest(url: url)
             webView.load(request)
+        } else {
+            print("❌ Failed to create URL for mikmik.site")
         }
     }
     
@@ -671,6 +787,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        print("🌐 WebView started loading...")
         startLoading()
         lightImpactFeedback.impactOccurred()
         
@@ -681,6 +798,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     }
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        print("🌐 WebView finished loading successfully")
         stopLoading()
         mediumImpactFeedback.impactOccurred()
         
@@ -704,6 +822,19 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             webView.backupCookies()
         }
         
+        // Ensure FCM token cookie is available after page load
+        Task {
+            if await fcmTokenCookieManager.validateFCMTokenCookie() {
+                print("🔥 FCM token cookie validated after page load")
+            } else {
+                print("🔥 FCM token cookie missing after page load - refreshing")
+                fcmTokenCookieManager.refreshFCMToken()
+            }
+            
+            // Comprehensive verification of FCM token cookie status
+            await fcmTokenCookieManager.verifyFCMTokenCookieStatus()
+        }
+        
         // Inject permissions to WebView FIRST - before any other scripts
         permissionManager.injectPermissionStatusToWebView(webView)
         
@@ -716,8 +847,8 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         hasInjectedPermissionScript = true
         print("🔐 Injecting permission override script...")
         
-        // Inject comprehensive permission override script
-        let permissionOverrideScript = """
+        // Inject permission override script
+        webView.evaluateJavaScript("""
             console.log('🔐 Zoobox Permission Override System Initializing...');
             
             // Ensure permissions object exists
@@ -725,124 +856,27 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
                 window.zooboxPermissions = {};
             }
             
-            // Store original APIs
-            const originalGeolocation = navigator.geolocation;
-            const originalNotification = window.Notification;
-            const originalGetUserMedia = navigator.mediaDevices ? navigator.mediaDevices.getUserMedia : null;
-            
-            // Override geolocation API IMMEDIATELY
+            // Override geolocation API
             if (navigator.geolocation) {
                 console.log('🔐 Overriding geolocation API...');
                 
-                const originalGetCurrentPosition = navigator.geolocation.getCurrentPosition;
-                const originalWatchPosition = navigator.geolocation.watchPosition;
-                const originalClearWatch = navigator.geolocation.clearWatch;
-                
-                // Override getCurrentPosition
                 navigator.geolocation.getCurrentPosition = function(successCallback, errorCallback, options) {
                     console.log('🔐 Geolocation getCurrentPosition called');
-                    console.log('🔐 Current permissions:', window.zooboxPermissions);
                     
                     if (window.zooboxPermissions.location === 'granted') {
                         console.log('✅ Location permission granted - using native location');
-                        
-                        if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
-                            // Use native location
-                            window.ZooboxBridge.getCurrentLocation();
-                            
-                            // Set up callbacks for native response
-                            window.lastLocationCallback = function(position) {
-                                console.log('📍 Native location received:', position);
-                                if (successCallback) {
-                                    successCallback(position);
-                                }
-                            };
-                            
-                            window.lastLocationErrorCallback = function(error) {
-                                console.log('📍 Native location error:', error);
-                                if (errorCallback) {
-                                    errorCallback(error);
-                                }
-                            };
-                        } else {
-                            // Fallback to original API
-                            console.log('⚠️ ZooboxBridge not available - using original API');
-                            originalGetCurrentPosition.call(navigator.geolocation, successCallback, errorCallback, options);
+                        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.locationRequest) {
+                            window.webkit.messageHandlers.locationRequest.postMessage({});
                         }
                     } else {
                         console.log('❌ Location permission not granted - requesting permission');
-                        if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
-                            window.ZooboxBridge.requestPermission('location');
+                        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.requestPermission) {
+                            window.webkit.messageHandlers.requestPermission.postMessage({type: 'location'});
                         }
                         if (errorCallback) {
-                            errorCallback({ 
-                                code: 1, 
-                                message: 'Permission denied - please grant location permission in the app' 
-                            });
+                            errorCallback({ code: 1, message: 'Permission denied' });
                         }
                     }
-                };
-                
-                // Override watchPosition
-                navigator.geolocation.watchPosition = function(successCallback, errorCallback, options) {
-                    console.log('🔐 Geolocation watchPosition called');
-                    console.log('🔐 Current permissions:', window.zooboxPermissions);
-                    
-                    if (window.zooboxPermissions.location === 'granted') {
-                        console.log('✅ Location permission granted - starting native tracking');
-                        
-                        if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
-                            // Start real-time tracking
-                            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.startRealTimeLocation) {
-                                window.webkit.messageHandlers.startRealTimeLocation.postMessage({});
-                            }
-                            
-                            // Set up callbacks for location updates
-                            window.locationWatchCallback = function(position) {
-                                console.log('📍 Native location update:', position);
-                                if (successCallback) {
-                                    successCallback(position);
-                                }
-                            };
-                            
-                            window.locationWatchErrorCallback = function(error) {
-                                console.log('📍 Native location error:', error);
-                                if (errorCallback) {
-                                    errorCallback(error);
-                                }
-                            };
-                            
-                            // Return a mock watch ID
-                            const watchId = Math.floor(Math.random() * 1000000);
-                            console.log('📍 Watch ID created:', watchId);
-                            return watchId;
-                        } else {
-                            // Fallback to original API
-                            console.log('⚠️ ZooboxBridge not available - using original API');
-                            return originalWatchPosition.call(navigator.geolocation, successCallback, errorCallback, options);
-                        }
-                    } else {
-                        console.log('❌ Location permission not granted - requesting permission');
-                        if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
-                            window.ZooboxBridge.requestPermission('location');
-                        }
-                        if (errorCallback) {
-                            errorCallback({ 
-                                code: 1, 
-                                message: 'Permission denied - please grant location permission in the app' 
-                            });
-                        }
-                        return -1;
-                    }
-                };
-                
-                // Keep original clearWatch
-                navigator.geolocation.clearWatch = function(watchId) {
-                    console.log('🔐 Clearing location watch:', watchId);
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.stopRealTimeLocation) {
-                        window.webkit.messageHandlers.stopRealTimeLocation.postMessage({});
-                    }
-                    return originalClearWatch.call(navigator.geolocation, watchId);
                 };
                 
                 console.log('✅ Geolocation API overridden successfully');
@@ -852,25 +886,19 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             if (window.Notification) {
                 console.log('🔐 Overriding Notification API...');
                 
-                const originalRequestPermission = window.Notification.requestPermission;
-                
                 window.Notification.requestPermission = function(callback) {
                     console.log('🔐 Notification permission requested');
                     
                     if (window.zooboxPermissions.notifications === 'granted') {
                         console.log('✅ Notification permission already granted');
-                        if (callback) {
-                            callback('granted');
-                        }
+                        if (callback) callback('granted');
                         return Promise.resolve('granted');
                     } else {
                         console.log('❌ Notification permission not granted - requesting permission');
-                        if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
-                            window.ZooboxBridge.requestPermission('notifications');
+                        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.requestPermission) {
+                            window.webkit.messageHandlers.requestPermission.postMessage({type: 'notifications'});
                         }
-                        if (callback) {
-                            callback('denied');
-                        }
+                        if (callback) callback('denied');
                         return Promise.resolve('denied');
                     }
                 };
@@ -878,183 +906,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
                 console.log('✅ Notification API overridden successfully');
             }
             
-            // Override getUserMedia API (for camera)
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                console.log('🔐 Overriding getUserMedia API...');
-                
-                const originalGetUserMedia = navigator.mediaDevices.getUserMedia;
-                
-                navigator.mediaDevices.getUserMedia = function(constraints) {
-                    console.log('🔐 getUserMedia called with constraints:', constraints);
-                    
-                    // Check what permissions are needed
-                    const needsCamera = constraints.video;
-                    
-                    let canProceed = true;
-                    let missingPermissions = [];
-                    
-                    if (needsCamera && window.zooboxPermissions.camera !== 'granted') {
-                        canProceed = false;
-                        missingPermissions.push('camera');
-                    }
-                    
-                    if (canProceed) {
-                        console.log('✅ All required permissions granted - proceeding with getUserMedia');
-                        return originalGetUserMedia.call(navigator.mediaDevices, constraints);
-                    } else {
-                        console.log('❌ Missing permissions:', missingPermissions);
-                        
-                        // Request missing permissions
-                        missingPermissions.forEach(permission => {
-                            if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
-                                window.ZooboxBridge.requestPermission(permission);
-                            }
-                        });
-                        
-                        // Return rejected promise
-                        return Promise.reject(new DOMException(
-                            'Permission denied - please grant ' + missingPermissions.join(' and ') + ' permission in the app',
-                            'NotAllowedError'
-                        ));
-                    }
-                };
-                
-                console.log('✅ getUserMedia API overridden successfully');
-            }
-            
-            // Listen for permission updates from native app
-            window.addEventListener('zooboxPermissionsUpdate', function(event) {
-                console.log('🔐 Permissions updated from native app:', event.detail);
-                if (event.detail) {
-                    window.zooboxPermissions = event.detail;
-                }
-                
-                // Re-evaluate any pending permission requests
-                console.log('🔄 Permission status updated - re-evaluating pending requests');
-            });
-            
-            // Override permission query API if available
-            if (navigator.permissions && navigator.permissions.query) {
-                console.log('🔐 Overriding permissions.query API...');
-                
-                const originalQuery = navigator.permissions.query;
-                
-                navigator.permissions.query = function(permissionDescriptor) {
-                    console.log('🔐 Permission query:', permissionDescriptor);
-                    
-                    const permissionName = permissionDescriptor.name;
-                    let permissionStatus = 'denied';
-                    
-                    switch (permissionName) {
-                        case 'geolocation':
-                            permissionStatus = window.zooboxPermissions.location === 'granted' ? 'granted' : 'denied';
-                            break;
-                        case 'notifications':
-                            permissionStatus = window.zooboxPermissions.notifications === 'granted' ? 'granted' : 'denied';
-                            break;
-                        case 'camera':
-                            permissionStatus = window.zooboxPermissions.camera === 'granted' ? 'granted' : 'denied';
-                            break;
-                        default:
-                            // Use original API for unknown permissions
-                            return originalQuery.call(navigator.permissions, permissionDescriptor);
-                    }
-                    
-                    console.log('🔐 Permission status for', permissionName, ':', permissionStatus);
-                    
-                    // Return a mock PermissionStatus object
-                    return Promise.resolve({
-                        state: permissionStatus,
-                        onchange: null
-                    });
-                };
-                
-                console.log('✅ permissions.query API overridden successfully');
-            }
-            
-            // AGGRESSIVE: Prevent any existing permission dialogs from showing
-            const preventPermissionDialogs = function() {
-                // Override any existing permission request methods
-                if (window.confirm) {
-                    const originalConfirm = window.confirm;
-                    window.confirm = function(message) {
-                        if (message && (message.includes('location') || message.includes('camera'))) {
-                            console.log('🔐 Blocking permission dialog:', message);
-                            return false;
-                        }
-                        return originalConfirm.call(window, message);
-                    };
-                }
-                
-                // Override alert for permission-related messages
-                if (window.alert) {
-                    const originalAlert = window.alert;
-                    window.alert = function(message) {
-                        if (message && (message.includes('location') || message.includes('camera'))) {
-                            console.log('🔐 Blocking permission alert:', message);
-                            return;
-                        }
-                        return originalAlert.call(window, message);
-                    };
-                }
-                
-                // Override prompt for permission-related messages
-                if (window.prompt) {
-                    const originalPrompt = window.prompt;
-                    window.prompt = function(message, defaultValue) {
-                        if (message && (message.includes('location') || message.includes('camera'))) {
-                            console.log('🔐 Blocking permission prompt:', message);
-                            return null;
-                        }
-                        return originalPrompt.call(window, message, defaultValue);
-                    };
-                }
-                
-                // Override any existing geolocation API that might have been set after our override
-                if (navigator.geolocation) {
-                    // Double-check that our override is still in place
-                    if (navigator.geolocation.getCurrentPosition.toString().includes('Zoobox')) {
-                        console.log('✅ Geolocation override still active');
-                    } else {
-                        console.log('⚠️ Geolocation override was overwritten - reapplying');
-                        // Re-apply our override
-                        navigator.geolocation.getCurrentPosition = function(successCallback, errorCallback, options) {
-                            console.log('🔐 Geolocation getCurrentPosition called (re-override)');
-                            if (window.zooboxPermissions.location === 'granted') {
-                                if (window.ZooboxBridge && window.ZooboxBridge.getCurrentLocation) {
-                                    window.ZooboxBridge.getCurrentLocation();
-                                    window.lastLocationCallback = successCallback;
-                                    window.lastLocationErrorCallback = errorCallback;
-                                }
-                            } else {
-                                if (window.ZooboxBridge && window.ZooboxBridge.requestPermission) {
-                                    window.ZooboxBridge.requestPermission('location');
-                                }
-                                if (errorCallback) {
-                                    errorCallback({ code: 1, message: 'Permission denied' });
-                                }
-                            }
-                        };
-                    }
-                }
-            };
-            
-            // Run prevention immediately
-            preventPermissionDialogs();
-            
-            // Also run after DOM is ready
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', preventPermissionDialogs);
-            }
-            
-            // Run prevention periodically to catch any late-overrides
-            setInterval(preventPermissionDialogs, 1000);
-            
             console.log('🔐 Zoobox Permission Override System Initialized Successfully');
             console.log('🔐 Current permissions:', window.zooboxPermissions);
-        """
-        
-        webView.evaluateJavaScript(permissionOverrideScript) { _, error in
+        """) { _, error in
             if let error = error {
                 print("🔐 Error injecting permission override script: \(error)")
             } else {
@@ -1064,6 +918,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     }
     
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        print("❌ WebView failed to load: \(error.localizedDescription)")
         stopLoading()
         heavyImpactFeedback.impactOccurred()
         
@@ -1088,6 +943,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     }
     
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        print("❌ WebView failed provisional navigation: \(error.localizedDescription)")
         stopLoading()
         heavyImpactFeedback.impactOccurred()
         
@@ -1261,34 +1117,18 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         webView.restoreCookies()
     }
     
-    // MARK: - CookieManagerDelegate
-    
-    func cookieManager(_ manager: CookieManager, didSaveCookies count: Int) {
-        print("🍪 Successfully backed up \(count) cookies")
-    }
-    
-    func cookieManager(_ manager: CookieManager, didRestoreCookies count: Int) {
-        print("🍪 Successfully restored \(count) cookies")
-    }
-    
-    func cookieManager(_ manager: CookieManager, didEncounterError error: Error) {
-        print("🍪 Cookie manager error: \(error.localizedDescription)")
-    }
-    
-    deinit {
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "hapticFeedback")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "locationRequest")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "startRealTimeLocation")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "stopRealTimeLocation")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "injectLocation")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "nativeMessage")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "requestPermission")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "getPermissionStatus")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "connectionRestored")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "connectionLost")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "retryConnection")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "checkSettings")
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "enableOfflineMode")
+    private func setupFCMTokenCookie() {
+        // Ensure FCM token cookie is available
+        Task {
+            // Check if FCM token cookie exists
+            if await fcmTokenCookieManager.validateFCMTokenCookie() {
+                print("🔥 FCM token cookie is valid")
+            } else {
+                print("🔥 FCM token cookie not found - requesting new token")
+                // Request new FCM token if cookie doesn't exist
+                fcmTokenCookieManager.refreshFCMToken()
+            }
+        }
     }
     
     // MARK: - PermissionManagerDelegate

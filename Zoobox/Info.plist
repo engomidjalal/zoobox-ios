@@ -50,9 +50,15 @@
     </dict>
     <key>UIBackgroundModes</key>
     <array>
+        <string>background-fetch</string>
         <string>background-processing</string>
         <string>location</string>
         <string>remote-notification</string>
+    </array>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>com.zoobox.orderTrackingRefresh</string>
+        <string>com.zoobox.orderTrackingProcessing</string>
     </array>
     <key>CFBundleDisplayName</key>
     <string>Zoobox</string>

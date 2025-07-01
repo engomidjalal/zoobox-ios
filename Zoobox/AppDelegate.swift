@@ -27,8 +27,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Set FCM messaging delegate
         Messaging.messaging().delegate = self
         
+        // Initialize FCM token cookie manager
+        setupFCMTokenCookieManager()
+        
         // Initialize connectivity monitoring
         setupConnectivityMonitoring()
+        
+        // Register background tasks for order tracking
+        BackgroundTaskManager.shared.registerBackgroundTasks()
         
         return true
     }
@@ -53,6 +59,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // The CookieManager will handle this automatically via notification observers
     }
 
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        // Ensure FCM token is saved as cookie when app becomes active
+        print("🔥 App became active - ensuring FCM token is saved as cookie")
+        FCMTokenCookieManager.shared.forceSaveCurrentFCMTokenAsCookie()
+    }
+
     // MARK: - Remote Notification Registration
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         // Pass device token to FCM
@@ -62,10 +74,38 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         print("Failed to register for remote notifications: \(error)")
     }
 
+    // MARK: - Background URL Session Handling
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        // Handle background URL session completion for order tracking
+        print("🔄 Background URL session completed: \(identifier)")
+        completionHandler()
+    }
+
     private func setupConnectivityMonitoring() {
         // Initialize the connectivity manager to start monitoring
         let connectivityManager = ConnectivityManager.shared
         print("📡 AppDelegate: Connectivity monitoring initialized")
+    }
+    
+    private func setupFCMTokenCookieManager() {
+        // Initialize FCM token cookie manager
+        let fcmTokenManager = FCMTokenCookieManager.shared
+        print("🔥 AppDelegate: FCM token cookie manager initialized")
+        
+        // Try to get existing FCM token and save it as cookie if available
+        Messaging.messaging().token { token, error in
+            if let error = error {
+                print("🔥 Error getting FCM token: \(error)")
+                return
+            }
+            
+            if let token = token {
+                print("🔥 Got existing FCM token: \(token)")
+                Task { @MainActor in
+                    fcmTokenManager.saveFCMTokenAsCookie(token)
+                }
+            }
+        }
     }
 }
 
@@ -81,6 +121,8 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
+        // Handle order tracking notification actions
+        OrderNotificationManager.shared.handleNotificationAction(response)
         completionHandler()
     }
 }
@@ -89,8 +131,12 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
 extension AppDelegate: MessagingDelegate {
     // Receive FCM registration token
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-        print("FCM Token: \(fcmToken ?? "")")
-        // Optionally, send this token to your server if you want to target this device
+        print("🔥 FCM Token received: \(fcmToken ?? "nil")")
+        
+        // Save FCM token as cookie
+        if let token = fcmToken {
+            FCMTokenCookieManager.shared.saveFCMTokenAsCookie(token)
+        }
     }
 }
 

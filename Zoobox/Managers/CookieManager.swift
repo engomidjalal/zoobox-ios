@@ -5,6 +5,8 @@ protocol CookieManagerDelegate: AnyObject {
     func cookieManager(_ manager: CookieManager, didSaveCookies count: Int)
     func cookieManager(_ manager: CookieManager, didRestoreCookies count: Int)
     func cookieManager(_ manager: CookieManager, didEncounterError error: Error)
+    func cookieManager(_ manager: CookieManager, didDetectUserId userId: String)
+    func cookieManager(_ manager: CookieManager, didLoseUserId userId: String)
 }
 
 class CookieManager: NSObject {
