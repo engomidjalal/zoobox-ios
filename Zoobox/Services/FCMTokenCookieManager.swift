@@ -20,14 +20,16 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
     private let cookieName = "FCM_token"
     private let domain = "mikmik.site"
     private let userDefaultsKey = "FCM_Token_Backup"
+    private var previousUserId: String?
     
     private override init() {
         super.init()
         loadTokenFromUserDefaults()
         setupTokenMonitoring()
         
-        // Check if both cookies exist on app startup and post if available
+        // Initialize previousUserId and check if both cookies exist on app startup
         Task {
+            await initializeUserIdTracking()
             await postFCMTokenAndUserIdIfNeeded()
         }
     }
@@ -84,8 +86,8 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
             
             print("🔥 FCM Token saved as cookie: \(token)")
 
-            // After saving the FCM token as a cookie, try to post both cookies if available
-            await postFCMTokenAndUserIdIfNeeded()
+            // After saving the FCM token as a cookie, check if both cookies are now available
+            await checkAndPostBothCookiesIfAvailable()
             
         } catch {
             print("🔥 Error saving FCM token as cookie: \(error)")
@@ -265,12 +267,15 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
     func getDebugInfo() async -> [String: Any] {
         let cookieToken = await getFCMTokenFromCookie()
         let savedToken = UserDefaults.standard.string(forKey: userDefaultsKey)
+        let userId = await extractUserIdFromCookies()
         
         return [
             "cookie_fcm_token": cookieToken ?? "nil",
             "saved_fcm_token": savedToken ?? "nil",
             "current_fcm_token": currentFCMToken ?? "nil",
             "is_token_saved": isTokenSaved,
+            "current_user_id": userId ?? "nil",
+            "previous_user_id": previousUserId ?? "nil",
             "domain": domain,
             "cookie_name": cookieName
         ]
@@ -323,33 +328,40 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
         
         guard let fcmToken = fcmToken, !fcmToken.isEmpty,
               let userId = userId, !userId.isEmpty else {
-            print("[FCMTokenCookieManager] Skipping POST: FCM_token or user_id missing.")
+            print("🔥 [FCMTokenCookieManager] Skipping POST: FCM_token or user_id missing.")
+            print("🔥 FCM_token: \(fcmToken?.prefix(10) ?? "nil")")
+            print("🔥 user_id: \(userId?.prefix(10) ?? "nil")")
             return
         }
         
+        print("🔥 [FCMTokenCookieManager] POSTING to FCM token updater API")
+        print("🔥 FCM_token: \(fcmToken.prefix(10))...")
+        print("🔥 user_id: \(userId.prefix(10))...")
+        print("🔥 device_type: ios")
+        
         let urlString = "https://mikmik.site/FCM_token_updater.php"
         guard let url = URL(string: urlString) else {
-            print("[FCMTokenCookieManager] Invalid URL: \(urlString)")
+            print("🔥 [FCMTokenCookieManager] Invalid URL: \(urlString)")
             return
         }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        let bodyString = "user_id=\(userId)&FCM_token=\(fcmToken)"
+        let bodyString = "user_id=\(userId)&FCM_token=\(fcmToken)&device_type=ios"
         request.httpBody = bodyString.data(using: .utf8)
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         
         let session = URLSession.shared
         let task = session.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("[FCMTokenCookieManager] POST error: \(error)")
+                print("🔥 [FCMTokenCookieManager] POST error: \(error)")
                 return
             }
             if let httpResponse = response as? HTTPURLResponse {
-                print("[FCMTokenCookieManager] POST response status: \(httpResponse.statusCode)")
+                print("🔥 [FCMTokenCookieManager] POST response status: \(httpResponse.statusCode)")
             }
             if let data = data, let responseString = String(data: data, encoding: .utf8) {
-                print("[FCMTokenCookieManager] POST response body: \(responseString)")
+                print("🔥 [FCMTokenCookieManager] POST response body: \(responseString)")
             }
         }
         task.resume()
@@ -384,6 +396,22 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
         await postFCMTokenAndUserIdIfNeeded()
     }
     
+    /// Public function to manually check and post both cookies if available
+    func checkAndPostBothCookies() async {
+        await checkAndPostBothCookiesIfAvailable()
+    }
+    
+    /// Initialize user_id tracking by getting current user_id from cookies
+    private func initializeUserIdTracking() async {
+        let userId = await extractUserIdFromCookies()
+        if let userId = userId, !userId.isEmpty {
+            previousUserId = userId
+            print("🔥 Initialized user_id tracking with: \(userId.prefix(10))")
+        } else {
+            print("🔥 No user_id cookie found during initialization")
+        }
+    }
+    
     deinit {
         websiteDataStore.httpCookieStore.remove(self)
     }
@@ -411,6 +439,42 @@ extension FCMTokenCookieManager: WKHTTPCookieStoreObserver {
                     }
                 }
             }
+            
+            // Check if user_id cookie changed and both cookies are now available
+            await checkAndPostBothCookiesIfAvailable()
         }
+    }
+    
+    /// Check if both FCM_token and user_id cookies are available and post to API
+    private func checkAndPostBothCookiesIfAvailable() async {
+        let fcmToken = await getFCMTokenFromCookie()
+        let userId = await extractUserIdFromCookies()
+        
+        // Check if user_id cookie changed
+        if let userId = userId, !userId.isEmpty {
+            if previousUserId != userId {
+                print("🔥 user_id cookie changed from '\(previousUserId?.prefix(10) ?? "nil")' to '\(userId.prefix(10))'")
+                previousUserId = userId
+            }
+        } else {
+            if previousUserId != nil {
+                print("🔥 user_id cookie was removed")
+                previousUserId = nil
+            }
+        }
+        
+        if let fcmToken = fcmToken, !fcmToken.isEmpty,
+           let userId = userId, !userId.isEmpty {
+            print("🔥 Both FCM_token and user_id cookies available - posting to API")
+            await postFCMTokenAndUserIdIfNeeded()
+        } else {
+            print("🔥 Not all required cookies available - FCM_token: \(fcmToken?.prefix(10) ?? "nil"), user_id: \(userId?.prefix(10) ?? "nil")")
+        }
+    }
+    
+    /// Public function to be called on page refresh to check and post both cookies
+    func checkAndPostCookiesOnPageRefresh() async {
+        print("🔥 Page refresh detected - checking and posting cookies if available")
+        await checkAndPostBothCookiesIfAvailable()
     }
 } 

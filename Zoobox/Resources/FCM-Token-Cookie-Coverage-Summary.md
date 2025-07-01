@@ -92,114 +92,128 @@ func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
 }
 ```
 
-## 🔄 FCM Token Generation Scenarios Covered
+## 🔄 Enhanced FCM Token and User ID Cookie Management
 
-### ✅ **Initial App Launch**
-- Firebase initializes and generates first FCM token
-- Token saved as cookie in `setupFCMTokenCookieManager()`
-
-### ✅ **App Restart**
-- App relaunches and gets existing FCM token
-- Token saved as cookie in `setupFCMTokenCookieManager()`
-
-### ✅ **Background/Foreground Transitions**
-- App becomes active and ensures FCM token is saved
-- Token saved as cookie in `applicationDidBecomeActive(_:)`
-
-### ✅ **FCM Token Refresh**
-- Firebase automatically refreshes FCM token
-- New token saved as cookie in `messaging(_:didReceiveRegistrationToken:)`
-
-### ✅ **User Login**
-- User logs in and needs FCM token for notifications
-- Token saved as cookie in `userDidLogin(_:)`
-
-### ✅ **Page Navigation**
-- User navigates to different pages in WebView
-- FCM token verified and saved in `webView(_:didFinish:)`
-
-### ✅ **View Controller Lifecycle**
-- Main view appears and becomes active
-- FCM token saved as cookie in `viewDidAppear(_:)`
-
-## 🔍 Verification and Logging
-
-### Comprehensive Logging
-All FCM token operations include detailed logging:
-```
-🔥 🔥 🔥 SAVING FCM TOKEN AS COOKIE: [token]
-🔥 🔥 🔥 FCM TOKEN CHANGED - SAVING NEW TOKEN AS COOKIE
-🔥 🔥 🔥 FCM TOKEN REFRESHED - SAVING AS COOKIE: [token]
-🔥 🔥 🔥 FORCE SAVING FCM TOKEN AS COOKIE: [token]
-```
-
-### Status Verification
-The system includes comprehensive verification:
+### **NEW: Cookie Change Monitoring**
+**Location**: `FCMTokenCookieManager.swift` - `cookiesDidChange(_:)`
+**Trigger**: Any cookie change in WebView
+**Action**: Monitors for both FCM_token and user_id cookie changes
 ```swift
-await fcmTokenCookieManager.verifyFCMTokenCookieStatus()
+func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+    Task {
+        // Check if FCM token cookie changed
+        // Check if user_id cookie changed and both cookies are now available
+        await checkAndPostBothCookiesIfAvailable()
+    }
+}
 ```
 
-This method checks:
-- Firebase FCM token
-- Cookie FCM token
-- Saved FCM token (UserDefaults)
-- Current FCM token (memory)
-- Token save status
+### **NEW: Page Refresh Trigger**
+**Location**: `MainViewController.swift` - `webView(_:didFinish:)`
+**Trigger**: Every page refresh/load completion
+**Action**: Checks and posts both cookies to API if available
+```swift
+// Check and post both cookies to API if available (on every page refresh)
+await fcmTokenCookieManager.checkAndPostCookiesOnPageRefresh()
+```
 
-## 🛡️ Error Handling
+### **NEW: User ID Cookie Tracking**
+**Location**: `FCMTokenCookieManager.swift` - `checkAndPostBothCookiesIfAvailable()`
+**Trigger**: Cookie changes or manual checks
+**Action**: Tracks user_id cookie changes and posts to API when both cookies are available
+```swift
+private func checkAndPostBothCookiesIfAvailable() async {
+    let fcmToken = await getFCMTokenFromCookie()
+    let userId = await extractUserIdFromCookies()
+    
+    // Check if user_id cookie changed
+    if let userId = userId, !userId.isEmpty {
+        if previousUserId != userId {
+            print("🔥 user_id cookie changed from '\(previousUserId?.prefix(10) ?? "nil")' to '\(userId.prefix(10))'")
+            previousUserId = userId
+        }
+    }
+    
+    if let fcmToken = fcmToken, !fcmToken.isEmpty,
+       let userId = userId, !userId.isEmpty {
+        await postFCMTokenAndUserIdIfNeeded()
+    }
+}
+```
 
-### Graceful Degradation
-- If FCM token generation fails, system logs error and continues
-- If cookie saving fails, system retries automatically
-- If token is empty or nil, system skips saving
+## 🎯 API Posting Scenarios
 
-### Fallback Mechanisms
-- UserDefaults backup for FCM tokens
-- Automatic token refresh when cookies are missing
-- Force save mechanisms for critical scenarios
+### **Scenario 1: FCM Token Exists, User ID Gets Set**
+1. App starts with FCM token cookie
+2. User logs in and user_id cookie gets set
+3. Cookie change detected
+4. Both cookies available → POST to API
 
-## 📊 Coverage Statistics
+### **Scenario 2: Page Refresh with Both Cookies**
+1. User refreshes page
+2. Page load completes
+3. Both cookies checked
+4. Both cookies available → POST to API
 
-### Trigger Points: 7
-- App Launch
-- Token Refresh
-- App Active
-- View Appear
-- User Login
-- WebView Setup
-- Page Load
+### **Scenario 3: User ID Changes**
+1. User logs out and logs in with different account
+2. user_id cookie changes
+3. Cookie change detected
+4. Both cookies available → POST to API
 
-### Verification Points: 3
-- WebView Setup
-- Page Load
-- Manual Verification
+### **Scenario 4: Manual Trigger**
+1. Developer calls `checkAndPostBothCookies()`
+2. Both cookies checked
+3. Both cookies available → POST to API
 
-### Backup Mechanisms: 2
-- UserDefaults storage
-- Force save methods
+## 📊 API Endpoint Details
 
-## ✅ Guarantee
+### **URL**: `https://mikmik.site/FCM_token_updater.php`
+### **Method**: POST
+### **Content-Type**: `application/x-www-form-urlencoded`
+### **Body**: `user_id={userId}&FCM_token={fcmToken}&device_type=ios`
 
-**Every FCM token generated at any time will be saved as a cookie.**
+## 🔍 Debug Information
 
-The system provides multiple layers of protection:
-1. **Automatic saving** on token generation
-2. **Force saving** on critical app events
-3. **Verification** on page loads
-4. **Backup storage** in UserDefaults
-5. **Comprehensive logging** for debugging
+### **Enhanced Debug Info**
+```swift
+let debugInfo = await fcmTokenCookieManager.getDebugInfo()
+// Returns:
+// - cookie_fcm_token: Token from cookie
+// - saved_fcm_token: Token from UserDefaults
+// - current_fcm_token: Current token in memory
+// - is_token_saved: Whether token is saved
+// - current_user_id: Current user_id from cookie
+// - previous_user_id: Previous user_id value
+// - domain: Cookie domain
+// - cookie_name: Cookie name
+```
 
-## 🔧 Testing Recommendations
+### **Manual Trigger Methods**
+```swift
+// Check and post both cookies if available
+await fcmTokenCookieManager.checkAndPostBothCookies()
 
-### Test Scenarios
-1. **Fresh App Install**: Verify FCM token is saved on first launch
-2. **App Restart**: Verify FCM token persists and is saved
-3. **Background/Foreground**: Verify token is saved when app becomes active
-4. **User Login**: Verify token is saved when user logs in
-5. **Page Navigation**: Verify token is verified on each page load
-6. **Token Refresh**: Verify new tokens are saved when Firebase refreshes
+// Post both cookies to API (if available)
+await fcmTokenCookieManager.postBothCookiesToAPI()
 
-### Verification Commands
+// Check on page refresh
+await fcmTokenCookieManager.checkAndPostCookiesOnPageRefresh()
+```
+
+## 🧪 Testing Scenarios
+
+### **Test Cases**
+1. **App Launch**: Verify FCM token persists and is saved
+2. **App Restart**: Verify token is saved when app becomes active
+3. **User Login**: Verify token is saved when user logs in
+4. **Page Navigation**: Verify token is verified on each page load
+5. **Token Refresh**: Verify new tokens are saved when Firebase refreshes
+6. **User ID Change**: Verify API posting when user_id cookie changes
+7. **Page Refresh**: Verify API posting on every page refresh
+8. **Both Cookies Available**: Verify API posting when both cookies exist
+
+### **Verification Commands**
 ```swift
 // Check current status
 await fcmTokenCookieManager.verifyFCMTokenCookieStatus()
@@ -209,8 +223,11 @@ fcmTokenCookieManager.forceSaveCurrentFCMTokenAsCookie()
 
 // Get debug info
 let debugInfo = await fcmTokenCookieManager.getDebugInfo()
+
+// Manually trigger check
+await fcmTokenCookieManager.checkAndPostBothCookies()
 ```
 
 ---
 
-*This comprehensive coverage ensures that FCM tokens are never missed and are always available as cookies for the web application.* 
+*This comprehensive coverage ensures that FCM tokens are never missed and are always available as cookies for the web application, with enhanced monitoring for user_id cookie changes and automatic API posting when both cookies are available.* 

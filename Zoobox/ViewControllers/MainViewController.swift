@@ -85,6 +85,13 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     // MARK: - FCM Setup
     // FCM notifications only - no API polling needed
     
+    /// Manually trigger FCM token and user_id cookie check and posting
+    func triggerFCMTokenAndUserIdCheck() {
+        Task {
+            await fcmTokenCookieManager.checkAndPostBothCookies()
+        }
+    }
+    
     // MARK: - Public Methods
     func loadURL(_ url: URL) {
         let request = URLRequest(url: url)
@@ -755,6 +762,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             
             // Comprehensive verification of FCM token cookie status
             await fcmTokenCookieManager.verifyFCMTokenCookieStatus()
+            
+            // Check and post both cookies to API if available (on every page refresh)
+            await fcmTokenCookieManager.checkAndPostCookiesOnPageRefresh()
         }
         
         // Inject permissions to WebView FIRST - before any other scripts
