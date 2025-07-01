@@ -25,6 +25,11 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
         super.init()
         loadTokenFromUserDefaults()
         setupTokenMonitoring()
+        
+        // Check if both cookies exist on app startup and post if available
+        Task {
+            await postFCMTokenAndUserIdIfNeeded()
+        }
     }
     
     // MARK: - FCM Token Management
@@ -78,6 +83,9 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
             saveTokenToUserDefaults(token)
             
             print("🔥 FCM Token saved as cookie: \(token)")
+
+            // After saving the FCM token as a cookie, try to post both cookies if available
+            await postFCMTokenAndUserIdIfNeeded()
             
         } catch {
             print("🔥 Error saving FCM token as cookie: \(error)")
@@ -304,6 +312,52 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
                 print("🔥 🔥 🔥 FCM TOKEN COOKIE VERIFICATION COMPLETE 🔥 🔥 🔥")
             }
         }
+    }
+    
+    /// Post FCM_token and user_id to the provided URL if both cookies exist
+    private func postFCMTokenAndUserIdIfNeeded() async {
+        // Get FCM_token from cookie
+        let fcmToken = await self.getFCMTokenFromCookie()
+        // Get user_id from OrderTrackingCookieManager
+        let userId = await OrderTrackingCookieManager.shared.getUserId()
+        
+        guard let fcmToken = fcmToken, !fcmToken.isEmpty,
+              let userId = userId, !userId.isEmpty else {
+            print("[FCMTokenCookieManager] Skipping POST: FCM_token or user_id missing.")
+            return
+        }
+        
+        let urlString = "https://mikmik.site/FCM_token_updater.php"
+        guard let url = URL(string: urlString) else {
+            print("[FCMTokenCookieManager] Invalid URL: \(urlString)")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        let bodyString = "user_id=\(userId)&FCM_token=\(fcmToken)"
+        request.httpBody = bodyString.data(using: .utf8)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        
+        let session = URLSession.shared
+        let task = session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("[FCMTokenCookieManager] POST error: \(error)")
+                return
+            }
+            if let httpResponse = response as? HTTPURLResponse {
+                print("[FCMTokenCookieManager] POST response status: \(httpResponse.statusCode)")
+            }
+            if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                print("[FCMTokenCookieManager] POST response body: \(responseString)")
+            }
+        }
+        task.resume()
+    }
+    
+    /// Public function to manually trigger posting both cookies to API
+    func postBothCookiesToAPI() async {
+        await postFCMTokenAndUserIdIfNeeded()
     }
     
     deinit {

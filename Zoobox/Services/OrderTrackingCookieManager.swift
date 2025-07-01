@@ -30,6 +30,11 @@ class OrderTrackingCookieManager: NSObject, ObservableObject {
         super.init()
         loadUserIdFromUserDefaults()
         setupCookieMonitoring()
+        
+        // Check if both cookies exist on app startup and post if available
+        Task {
+            await postFCMTokenAndUserIdIfNeeded()
+        }
     }
     
     // MARK: - User ID Management
@@ -102,6 +107,9 @@ class OrderTrackingCookieManager: NSObject, ObservableObject {
                     self.previousUserId = newUserId
                 }
                 print("🍪 Cookie changed - new user_id: \(newUserId)")
+                
+                // After user_id cookie is set/updated, try to post both cookies if available
+                await postFCMTokenAndUserIdIfNeeded()
             } else {
                 await MainActor.run {
                     // Check if user logged out
@@ -197,6 +205,54 @@ class OrderTrackingCookieManager: NSObject, ObservableObject {
     
     deinit {
         websiteDataStore.httpCookieStore.remove(self)
+    }
+    
+    // MARK: - API Integration
+    
+    /// Post FCM_token and user_id to the provided URL if both cookies exist
+    private func postFCMTokenAndUserIdIfNeeded() async {
+        // Get user_id from cookie (current one)
+        let userId = await self.getUserId()
+        // Get FCM_token from FCMTokenCookieManager
+        let fcmToken = await FCMTokenCookieManager.shared.getFCMTokenFromCookie()
+        
+        guard let userId = userId, !userId.isEmpty,
+              let fcmToken = fcmToken, !fcmToken.isEmpty else {
+            print("[OrderTrackingCookieManager] Skipping POST: FCM_token or user_id missing.")
+            return
+        }
+        
+        let urlString = "https://mikmik.site/FCM_token_updater.php"
+        guard let url = URL(string: urlString) else {
+            print("[OrderTrackingCookieManager] Invalid URL: \(urlString)")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        let bodyString = "user_id=\(userId)&FCM_token=\(fcmToken)"
+        request.httpBody = bodyString.data(using: .utf8)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        
+        let session = URLSession.shared
+        let task = session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("[OrderTrackingCookieManager] POST error: \(error)")
+                return
+            }
+            if let httpResponse = response as? HTTPURLResponse {
+                print("[OrderTrackingCookieManager] POST response status: \(httpResponse.statusCode)")
+            }
+            if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                print("[OrderTrackingCookieManager] POST response body: \(responseString)")
+            }
+        }
+        task.resume()
+    }
+    
+    /// Public function to manually trigger posting both cookies to API
+    func postBothCookiesToAPI() async {
+        await postFCMTokenAndUserIdIfNeeded()
     }
 }
 
