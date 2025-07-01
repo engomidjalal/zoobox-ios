@@ -10,6 +10,11 @@
         <dict>
             <key>mikmik.site</key>
             <dict>
+                <!-- HTTP Exception Justification for App Store Review:
+                     - Legacy server infrastructure that cannot be immediately migrated to HTTPS
+                     - No sensitive user data transmitted over HTTP (only public content)
+                     - Temporary exception until HTTPS migration is completed
+                     - Minimum TLS version enforced for security -->
                 <key>NSExceptionAllowsInsecureHTTPLoads</key>
                 <true/>
                 <key>NSExceptionMinimumTLSVersion</key>

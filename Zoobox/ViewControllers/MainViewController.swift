@@ -57,6 +57,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         
         // FCM setup only - no API polling
         
+        // Setup FCM notification deep link observer
+        setupFCMDeepLinkObserver()
+        
         loadMainSite()
         prepareHapticFeedback()
     }
@@ -90,6 +93,31 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         Task {
             await fcmTokenCookieManager.checkAndPostBothCookies()
         }
+    }
+    
+    // MARK: - FCM Deep Link Handling
+    private func setupFCMDeepLinkObserver() {
+        // Listen for deep link notifications from FCM
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleFCMDeepLink(_:)),
+            name: NSNotification.Name("OpenDeepLinkURL"),
+            object: nil
+        )
+        print("🔗 FCM deep link observer setup complete")
+    }
+    
+    @objc private func handleFCMDeepLink(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let url = userInfo["url"] as? URL else {
+            print("🔗 Invalid deep link notification data")
+            return
+        }
+        
+        print("🔗 Handling FCM deep link: \(url)")
+        
+        // Load the URL in the web view
+        loadURL(url)
     }
     
     // MARK: - Public Methods
@@ -1641,6 +1669,14 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
             
             self.showSimpleNoInternetDialog()
         }
+    }
+    
+    // MARK: - Cleanup
+    
+    deinit {
+        // Remove notification observer
+        NotificationCenter.default.removeObserver(self)
+        print("🔗 FCM deep link observer removed")
     }
     
     // MARK: - Programmatic Refresh

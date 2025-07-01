@@ -116,13 +116,75 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.alert, .sound, .badge])
     }
+    
     // Handle notification tap
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        // Handle FCM notification actions
-        // Order tracking notifications removed - using FCM only
+        
+        print("🔔 Notification tapped: \(response.notification.request.identifier)")
+        
+        // Extract notification data
+        let userInfo = response.notification.request.content.userInfo
+        print("🔔 Notification userInfo: \(userInfo)")
+        
+        // Handle FCM notification deep linking
+        handleFCMNotificationDeepLink(userInfo: userInfo)
+        
         completionHandler()
+    }
+    
+    // MARK: - FCM Notification Deep Link Handling
+    private func handleFCMNotificationDeepLink(userInfo: [AnyHashable: Any]) {
+        print("🔗 Processing FCM notification for deep linking")
+        
+        // Extract order_type and order_id from notification data
+        guard let orderType = userInfo["order_type"] as? String,
+              let orderId = userInfo["order_id"] as? String else {
+            print("🔗 Missing order_type or order_id in notification data")
+            return
+        }
+        
+        print("🔗 Order Type: \(orderType), Order ID: \(orderId)")
+        
+        // Construct deep link URL based on order type
+        var deepLinkURL: URL?
+        
+        switch orderType.lowercased() {
+        case "food":
+            // Food order tracking URL
+            let urlString = "https://mikmik.site/track_order.php?order_id=\(orderId)"
+            deepLinkURL = URL(string: urlString)
+            print("🔗 Food order deep link: \(urlString)")
+            
+        case "d2d":
+            // D2D order tracking URL
+            let urlString = "https://mikmik.site/d2d/track_d2d.php?order_id=\(orderId)"
+            deepLinkURL = URL(string: urlString)
+            print("🔗 D2D order deep link: \(urlString)")
+            
+        default:
+            print("🔗 Unknown order type: \(orderType)")
+            return
+        }
+        
+        // Open the deep link URL
+        if let url = deepLinkURL {
+            openDeepLinkURL(url: url)
+        }
+    }
+    
+    private func openDeepLinkURL(url: URL) {
+        print("🔗 Opening deep link URL: \(url)")
+        
+        // Post notification to open URL in main view controller
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("OpenDeepLinkURL"),
+                object: nil,
+                userInfo: ["url": url]
+            )
+        }
     }
 }
 
