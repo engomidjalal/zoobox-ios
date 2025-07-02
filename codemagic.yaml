@@ -25,11 +25,6 @@ workflows:
       - name: Set up keychain for code signing
         script: | 
           keychain initialize
-      - name: Build .ipa for App Store distribution
-        script: | 
-          xcode-project build-ipa \
-            --project "$XCODE_WORKSPACE" \
-            --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
