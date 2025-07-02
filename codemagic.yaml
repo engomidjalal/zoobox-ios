@@ -1,0 +1,38 @@
+workflows:
+  ios-testflight:
+    name: iOS TestFlight Build
+    max_build_duration: 60
+    environment:
+      vars:
+        XCODE_WORKSPACE: Zoobox.xcodeproj
+        XCODE_SCHEME: Zoobox
+      xcode: latest
+      cocoapods: default
+      groups:
+        - app_store_credentials
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+    scripts:
+      - name: Set up keychain to be used for code signing
+        script: | 
+          keychain initialize
+      - name: Install dependencies
+        script: | 
+          pod install || true
+      - name: Build .ipa for distribution
+        script: | 
+          xcode-project build-ipa \
+            --project "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME" \
+            --export-method app-store
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: app_store_credentials
+        submit_to_testflight: true 
