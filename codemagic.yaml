@@ -2,14 +2,18 @@ workflows:
   ios-testflight:
     name: iOS TestFlight Build
     max_build_duration: 60
+    instance_type: mac_mini_m1
+    integrations:
+      app_store_connect: "Zoobox-Codemagic CI/CD"
     environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.zoobox.customer.Zoobox
       vars:
         XCODE_WORKSPACE: Zoobox.xcodeproj
         XCODE_SCHEME: Zoobox
       xcode: latest
       cocoapods: default
-      groups:
-        - app_store_credentials
     triggering:
       events:
         - push
@@ -18,13 +22,13 @@ workflows:
           include: true
           source: true
     scripts:
-      - name: Set up keychain to be used for code signing
+      - name: Set up keychain for code signing
         script: | 
           keychain initialize
-      - name: Install dependencies
+      - name: Install CocoaPods dependencies
         script: | 
-          pod install || true
-      - name: Build .ipa for distribution
+          pod install
+      - name: Build .ipa for App Store distribution
         script: | 
           xcode-project build-ipa \
             --project "$XCODE_WORKSPACE" \
@@ -32,9 +36,11 @@ workflows:
             --export-method app-store
     artifacts:
       - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-    integrations:
-      app_store_connect: integration 
+        beta_groups:
+          - App Store Connect Users
+        submit_to_app_store: false
