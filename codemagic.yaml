@@ -25,9 +25,6 @@ workflows:
       - name: Set up keychain for code signing
         script: | 
           keychain initialize
-      - name: Install CocoaPods dependencies
-        script: | 
-          pod install
       - name: Build .ipa for App Store distribution
         script: | 
           xcode-project build-ipa \
