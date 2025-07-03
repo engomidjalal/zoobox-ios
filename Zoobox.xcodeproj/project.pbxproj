@@ -293,7 +293,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = Zoobox/Zoobox.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -301,6 +301,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Zoobox/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Zoobox;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Zoobox needs camera access to capture delivery photos and verification images.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Zoobox needs continuous location access to track deliveries in the background and provide real-time updates.";
 				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Zoobox needs background location access to track deliveries and send location updates even when the app is not active.";
@@ -319,7 +320,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.zoobox.customer.Zoobox;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = omid;
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = Zoobox;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -333,7 +334,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = Zoobox/Zoobox.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -341,6 +342,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Zoobox/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Zoobox;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Zoobox needs camera access to capture delivery photos and verification images.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Zoobox needs continuous location access to track deliveries in the background and provide real-time updates.";
 				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Zoobox needs background location access to track deliveries and send location updates even when the app is not active.";
@@ -359,7 +361,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.zoobox.customer.Zoobox;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = omid;
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = Zoobox;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
