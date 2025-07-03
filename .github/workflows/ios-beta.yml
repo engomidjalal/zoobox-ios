@@ -32,6 +32,31 @@ jobs:
         working-directory: Zoobox
         continue-on-error: true
 
+      # --- BEGIN: iOS Code Signing Setup ---
+      - name: Decode certificate and provisioning profile
+        run: |
+          echo "$IOS_CERTIFICATE_BASE64" | base64 --decode > signing.p12
+          echo "$IOS_PROFILE_BASE64" | base64 --decode > profile.mobileprovision
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+
+      - name: Install signing certificate
+        run: |
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import signing.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "" build.keychain
+        env:
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+
+      - name: Install provisioning profile
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+      # --- END: iOS Code Signing Setup ---
+
       - name: Write App Store Connect API key to file
         run: echo "$APP_STORE_CONNECT_API_KEY_JSON" > ./fastlane/AuthKey.json
         env:
