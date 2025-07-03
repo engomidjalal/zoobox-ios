@@ -87,6 +87,8 @@ class SimplePermissionRequestViewController: UIViewController {
         view.backgroundColor = .zooboxBackground
         setupUI()
         updatePermissionDisplay()
+        // Remove skip button from UI
+        skipButton.removeFromSuperview()
     }
     
     private func setupUI() {
@@ -189,29 +191,20 @@ class SimplePermissionRequestViewController: UIViewController {
     }
     
     @objc private func skipButtonTapped() {
-        // Skip current permission and move to next
-        currentPermissionIndex += 1
-        updatePermissionDisplay()
+        // Remove skip logic entirely
     }
     
     private func showPermissionDeniedAlert(for permission: PermissionType) {
         let alert = UIAlertController(
             title: "\(permission.displayName) Permission Required",
-            message: "\(permission.displayName) access is needed for \(permission.usageDescription.lowercased()).\n\nYou can enable it in Settings or skip for now.",
+            message: "\(permission.displayName) access is needed for \(permission.usageDescription.lowercased()).\n\nYou can enable it in Settings.",
             preferredStyle: .alert
         )
-        
         alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
         })
-        
-        alert.addAction(UIAlertAction(title: "Skip", style: .cancel) { _ in
-            self.currentPermissionIndex += 1
-            self.updatePermissionDisplay()
-        })
-        
         present(alert, animated: true)
     }
     

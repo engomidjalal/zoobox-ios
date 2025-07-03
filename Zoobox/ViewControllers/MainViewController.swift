@@ -435,15 +435,67 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     private func loadMainSite() {
         print("🌐 Loading main site...")
         
+        // Show loading indicator
+        showLoadingIndicator()
+        
         // Restore cookies before loading the site
         webView.restoreCookies()
         
         if let url = URL(string: "https://mikmik.site") {
             print("🌐 Loading URL: \(url)")
-            let request = URLRequest(url: url)
+            let request = URLRequest(url: url, timeoutInterval: 30.0) // Add timeout
             webView.load(request)
         } else {
             print("❌ Failed to create URL for mikmik.site")
+            showError(.unknown, error: NSError(domain: "URL", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
+        }
+    }
+    
+    // MARK: - Loading Indicator
+    private func showLoadingIndicator() {
+        // Create a simple loading view to prevent blank screen
+        let loadingView = UIView()
+        loadingView.backgroundColor = .zooboxBackground
+        loadingView.tag = 999 // Tag for easy removal
+        
+        let activityIndicator = UIActivityIndicatorView(style: .large)
+        activityIndicator.color = .zooboxRed
+        activityIndicator.startAnimating()
+        
+        let label = UILabel()
+        label.text = "Loading Zoobox..."
+        label.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        label.textColor = .zooboxTextPrimary
+        label.textAlignment = .center
+        
+        loadingView.addSubview(activityIndicator)
+        loadingView.addSubview(label)
+        
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            activityIndicator.centerXAnchor.constraint(equalTo: loadingView.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: loadingView.centerYAnchor, constant: -20),
+            label.topAnchor.constraint(equalTo: activityIndicator.bottomAnchor, constant: 16),
+            label.centerXAnchor.constraint(equalTo: loadingView.centerXAnchor),
+            label.leadingAnchor.constraint(equalTo: loadingView.leadingAnchor, constant: 20),
+            label.trailingAnchor.constraint(equalTo: loadingView.trailingAnchor, constant: -20)
+        ])
+        
+        view.addSubview(loadingView)
+        loadingView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            loadingView.topAnchor.constraint(equalTo: view.topAnchor),
+            loadingView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+    
+    private func hideLoadingIndicator() {
+        if let loadingView = view.viewWithTag(999) {
+            loadingView.removeFromSuperview()
         }
     }
     
@@ -759,6 +811,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         stopLoading()
         mediumImpactFeedback.impactOccurred()
         
+        // Hide loading indicator
+        hideLoadingIndicator()
+        
         // Stop refresh control
         refreshControl.endRefreshing()
         
@@ -882,6 +937,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         stopLoading()
         heavyImpactFeedback.impactOccurred()
         
+        // Hide loading indicator
+        hideLoadingIndicator()
+        
         // Stop refresh control
         refreshControl.endRefreshing()
         
@@ -906,6 +964,9 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         print("❌ WebView failed provisional navigation: \(error.localizedDescription)")
         stopLoading()
         heavyImpactFeedback.impactOccurred()
+        
+        // Hide loading indicator
+        hideLoadingIndicator()
         
         // Stop refresh control
         refreshControl.endRefreshing()
@@ -1256,10 +1317,90 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
     private func handleWebViewError(_ error: Error) {
         lastError = error
         let errorType = ErrorViewController.createErrorType(from: error)
+        
+        // Try to load a fallback page first for certain errors
+        if shouldTryFallbackPage(for: error) {
+            loadFallbackPage()
+            return
+        }
+        
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.showError(errorType, error: error)
         }
+    }
+    
+    private func shouldTryFallbackPage(for error: Error) -> Bool {
+        // Try fallback for network-related errors
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain || 
+               nsError.domain == "Timeout" ||
+               error.localizedDescription.contains("timeout") ||
+               error.localizedDescription.contains("connection")
+    }
+    
+    private func loadFallbackPage() {
+        print("🔄 Loading fallback page...")
+        
+        let fallbackHTML = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body { 
+                    font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+                    margin: 0; 
+                    padding: 20px; 
+                    background-color: #f8f9fa; 
+                    text-align: center;
+                }
+                .container { 
+                    max-width: 400px; 
+                    margin: 50px auto; 
+                    background: white; 
+                    padding: 30px; 
+                    border-radius: 12px; 
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }
+                .logo { 
+                    font-size: 24px; 
+                    font-weight: bold; 
+                    color: #dc3545; 
+                    margin-bottom: 20px;
+                }
+                .message { 
+                    color: #6c757d; 
+                    margin-bottom: 20px; 
+                    line-height: 1.5;
+                }
+                .retry-btn { 
+                    background: #dc3545; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px 24px; 
+                    border-radius: 8px; 
+                    font-size: 16px; 
+                    cursor: pointer;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="logo">Zoobox</div>
+                <div class="message">
+                    Unable to connect to Zoobox services at the moment. 
+                    Please check your internet connection and try again.
+                </div>
+                <button class="retry-btn" onclick="window.webkit.messageHandlers.retryConnection.postMessage({})">
+                    Retry Connection
+                </button>
+            </div>
+        </body>
+        </html>
+        """
+        
+        webView.loadHTMLString(fallbackHTML, baseURL: nil)
     }
     
     private func showError(_ errorType: ErrorType, error: Error) {
@@ -1588,6 +1729,7 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         
         let timeout: TimeInterval = 30 // 30 seconds
         if Date().timeIntervalSince(startTime) > timeout {
+            hideLoadingIndicator()
             handleWebViewError(NSError(domain: "Timeout", code: -1, userInfo: [NSLocalizedDescriptionKey: "Loading timeout"]))
         }
     }
@@ -1649,7 +1791,13 @@ class MainViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
-            self.retryLoading()
+            // Hide any error views first
+            if self.isShowingError {
+                self.hideError()
+            }
+            
+            // Try to load the main site again
+            self.loadMainSite()
         }
     }
     

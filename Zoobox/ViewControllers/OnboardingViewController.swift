@@ -3,7 +3,7 @@ import CoreLocation
 import AVFoundation
 import UserNotifications
 
-class OnboardingViewController: UIViewController {
+class OnboardingViewController: UIViewController, PermissionManagerDelegate {
     
     // MARK: - UI Components
     private let scrollView = UIScrollView()
@@ -40,6 +40,9 @@ class OnboardingViewController: UIViewController {
     
     private var currentPage = 0
     private let permissionManager = PermissionManager.shared
+    private var hasStartedAutoPermissionFlow = false
+    private var autoPermissionIndex: Int = 0
+    private var isAutoPermissionFlowActive = false
     
     // MARK: - Lifecycle
     override func viewDidLoad() {
@@ -47,11 +50,17 @@ class OnboardingViewController: UIViewController {
         setupUI()
         setupConstraints()
         updateUI()
+        permissionManager.delegate = self
     }
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         updateAllPermissionStatuses()
+        // Start auto permission flow if not already started
+        if !hasStartedAutoPermissionFlow {
+            hasStartedAutoPermissionFlow = true
+            startAutoPermissionFlow()
+        }
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -98,13 +107,6 @@ class OnboardingViewController: UIViewController {
         nextButton.layer.cornerRadius = 25
         nextButton.addTarget(self, action: #selector(nextButtonTapped), for: .touchUpInside)
         view.addSubview(nextButton)
-        
-        // Skip button
-        skipButton.setTitle("Skip", for: .normal)
-        skipButton.setTitleColor(.zooboxRed, for: .normal)
-        skipButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
-        skipButton.addTarget(self, action: #selector(skipButtonTapped), for: .touchUpInside)
-        view.addSubview(skipButton)
     }
     
     private func setupPermissionCards() {
@@ -224,7 +226,6 @@ class OnboardingViewController: UIViewController {
         permissionStackView.translatesAutoresizingMaskIntoConstraints = false
         pageControl.translatesAutoresizingMaskIntoConstraints = false
         nextButton.translatesAutoresizingMaskIntoConstraints = false
-        skipButton.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
             // Scroll view
@@ -252,13 +253,9 @@ class OnboardingViewController: UIViewController {
             
             // Next button
             nextButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            nextButton.bottomAnchor.constraint(equalTo: skipButton.topAnchor, constant: -20),
+            nextButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
             nextButton.widthAnchor.constraint(equalToConstant: 200),
-            nextButton.heightAnchor.constraint(equalToConstant: 50),
-            
-            // Skip button
-            skipButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            skipButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20)
+            nextButton.heightAnchor.constraint(equalToConstant: 50)
         ])
         
         // Set content view width to accommodate all cards
@@ -268,48 +265,11 @@ class OnboardingViewController: UIViewController {
     
     // MARK: - Actions
     @objc private func nextButtonTapped() {
-        if currentPage < permissions.count - 1 {
-            // Check if current permission is enabled, if not request it
-            let currentPermission = permissions[currentPage]
-            let status = permissionManager.getPermissionStatus(for: currentPermission.type)
-            
-            if status == .notDetermined {
-                // Request permission before moving to next page
-                if let cardView = getCurrentCardView() {
-                    requestPermission(for: currentPermission, cardView: cardView)
-                }
-                
-                // Wait a moment for permission request, then move to next page
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self.currentPage += 1
-                    self.scrollToPage(self.currentPage)
-                }
-            } else {
-                // Permission already determined, move to next page
-                currentPage += 1
-                scrollToPage(currentPage)
-            }
-        } else {
-            // On last page, check if all permissions are granted
-            checkAllPermissionsAndProceed()
-        }
+        // No-op: permission flow is now automatic
     }
     
     @objc private func skipButtonTapped() {
-        // Show confirmation dialog before skipping
-        let alert = UIAlertController(
-            title: "Skip Permissions?",
-            message: "You can enable permissions later in Settings, but some features may not work properly.",
-            preferredStyle: .alert
-        )
-        
-        alert.addAction(UIAlertAction(title: "Skip", style: .destructive) { _ in
-            self.proceedToMain()
-        })
-        
-        alert.addAction(UIAlertAction(title: "Continue Setup", style: .cancel))
-        
-        present(alert, animated: true)
+        // No-op: permission flow is now automatic
     }
     
     @objc private func pageControlChanged() {
@@ -431,8 +391,6 @@ class OnboardingViewController: UIViewController {
             }
         })
         
-        alert.addAction(UIAlertAction(title: "Skip for Now", style: .cancel))
-        
         present(alert, animated: true)
     }
     
@@ -440,19 +398,26 @@ class OnboardingViewController: UIViewController {
         // Mark onboarding as completed
         UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         
-        // Get the scene delegate and set MainViewController as root
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let sceneDelegate = windowScene.delegate as? SceneDelegate {
-            sceneDelegate.setMainViewControllerAsRoot()
-        } else {
-            // Fallback: present MainViewController directly
-            let mainVC = MainViewController()
-            mainVC.modalPresentationStyle = .fullScreen
-            mainVC.modalTransitionStyle = .crossDissolve
-            
-            present(mainVC, animated: true) {
-                print("✅ MainViewController presented successfully")
+        // If this is the first launch, show the blocking permission UI
+        if UserDefaults.standard.bool(forKey: "hasSeenOnboarding") {
+            // Not first launch, go to main
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let sceneDelegate = windowScene.delegate as? SceneDelegate {
+                sceneDelegate.setMainViewControllerAsRoot()
+            } else {
+                let mainVC = MainViewController()
+                mainVC.modalPresentationStyle = .fullScreen
+                mainVC.modalTransitionStyle = .crossDissolve
+                present(mainVC, animated: true) {
+                    print("✅ MainViewController presented successfully")
+                }
             }
+        } else {
+            // First launch: show blocking permission UI
+            let blockingVC = BlockingPermissionViewController()
+            blockingVC.modalPresentationStyle = .fullScreen
+            blockingVC.modalTransitionStyle = .crossDissolve
+            present(blockingVC, animated: true)
         }
     }
     
@@ -502,7 +467,7 @@ class OnboardingViewController: UIViewController {
         let permissionList = deniedPermissions.joined(separator: ", ")
         let alert = UIAlertController(
             title: "Permissions Required",
-            message: "The following permissions were denied: \(permissionList).\n\nYou can enable them in Settings or continue without them (some features may not work).",
+            message: "The following permissions were denied: \(permissionList).\n\nYou must enable them in Settings to continue.",
             preferredStyle: .alert
         )
         
@@ -510,32 +475,6 @@ class OnboardingViewController: UIViewController {
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
-            // Wait a bit then proceed
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                self.proceedToMain()
-            }
-        })
-        
-        alert.addAction(UIAlertAction(title: "Try Again", style: .default) { _ in
-            // Reset permission alerts and try again
-            self.permissionManager.resetPermissionAlerts()
-            
-            // Go back to first denied permission
-            if let firstDenied = deniedPermissions.first,
-               let index = self.permissions.firstIndex(where: { $0.title.contains(firstDenied) }) {
-                self.currentPage = index
-                self.scrollToPage(index)
-                
-                // Request permission again
-                let permission = self.permissions[index]
-                if let cardView = self.getCurrentCardView() {
-                    self.requestPermission(for: permission, cardView: cardView)
-                }
-            }
-        })
-        
-        alert.addAction(UIAlertAction(title: "Continue Anyway", style: .default) { _ in
-            self.proceedToMain()
         })
         
         present(alert, animated: true)
@@ -549,6 +488,63 @@ class OnboardingViewController: UIViewController {
                 updatePermissionStatus(for: permission, cardView: cardView, granted: status == .granted)
             }
         }
+    }
+    
+    private func startAutoPermissionFlow() {
+        autoPermissionIndex = 0
+        isAutoPermissionFlowActive = true
+        requestNextPermissionIfNeeded()
+    }
+
+    private func requestNextPermissionIfNeeded() {
+        guard isAutoPermissionFlowActive else { return }
+        guard autoPermissionIndex < permissions.count else {
+            isAutoPermissionFlowActive = false
+            checkAllPermissionsAndProceed()
+            return
+        }
+        let permission = permissions[autoPermissionIndex]
+        let status = permissionManager.getPermissionStatus(for: permission.type)
+        if status == .notDetermined {
+            permissionManager.requestPermissionDirectly(for: permission.type)
+            // Wait for delegate callback before proceeding
+        } else {
+            autoPermissionIndex += 1
+            requestNextPermissionIfNeeded()
+        }
+    }
+
+    // PermissionManagerDelegate
+    func permissionManager(_ manager: PermissionManager, didUpdatePermissions permissions: [PermissionType : PermissionStatus]) {
+        // Only proceed if in auto flow
+        guard isAutoPermissionFlowActive else { return }
+        // Check if the current permission is now determined
+        let currentPermission = self.permissions[autoPermissionIndex]
+        let status = permissionManager.getPermissionStatus(for: currentPermission.type)
+        if status != .notDetermined {
+            autoPermissionIndex += 1
+            requestNextPermissionIfNeeded()
+        }
+        
+        // Check if all permissions are now granted and auto-proceed
+        checkIfAllPermissionsGrantedAndProceed()
+    }
+    
+    private func checkIfAllPermissionsGrantedAndProceed() {
+        let allGranted = permissions.allSatisfy { permission in
+            permissionManager.getPermissionStatus(for: permission.type) == .granted
+        }
+        
+        if allGranted {
+            // All permissions granted, automatically proceed
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.checkAllPermissionsAndProceed()
+            }
+        }
+    }
+    
+    func permissionManager(_ manager: PermissionManager, requiresPermissionAlertFor permission: PermissionType) {
+        // No-op for onboarding
     }
 }
 

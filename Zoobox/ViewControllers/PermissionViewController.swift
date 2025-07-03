@@ -436,6 +436,15 @@ class PermissionViewController: UIViewController, CLLocationManagerDelegate, Per
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
+            // Check if we're still the top view controller
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let window = windowScene.windows.first,
+                  let topViewController = window.rootViewController?.topMostViewController(),
+                  topViewController == self else {
+                print("🚫 PermissionViewController not top view controller - skipping navigation")
+                return
+            }
+            
             let mainVC = MainViewController()
             mainVC.modalPresentationStyle = .fullScreen
             mainVC.modalTransitionStyle = .crossDissolve
