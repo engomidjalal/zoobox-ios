@@ -11,18 +11,19 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2'
-
-      - name: Install Bundler
-        run: gem install bundler
-
-      - name: Install Fastlane
-        run: gem install fastlane
+          bundler-cache: true
 
       - name: Install CocoaPods dependencies
         run: |
@@ -40,4 +41,4 @@ jobs:
         env:
           APP_STORE_CONNECT_API_KEY_PATH: ./fastlane/AuthKey.json
           FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
-        run: fastlane beta 
+        run: bundle exec fastlane beta
