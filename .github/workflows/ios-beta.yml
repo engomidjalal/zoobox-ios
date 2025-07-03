@@ -1,0 +1,43 @@
+name: iOS Beta TestFlight
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Install Bundler
+        run: gem install bundler
+
+      - name: Install Fastlane
+        run: gem install fastlane
+
+      - name: Install CocoaPods dependencies
+        run: |
+          which pod || sudo gem install cocoapods
+          pod install --repo-update
+        working-directory: Zoobox
+        continue-on-error: true
+
+      - name: Write App Store Connect API key to file
+        run: echo "$APP_STORE_CONNECT_API_KEY_JSON" > ./fastlane/AuthKey.json
+        env:
+          APP_STORE_CONNECT_API_KEY_JSON: ${{ secrets.APP_STORE_CONNECT_API_KEY_JSON }}
+
+      - name: Fastlane Beta
+        env:
+          APP_STORE_CONNECT_API_KEY_PATH: ./fastlane/AuthKey.json
+          FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
+        run: fastlane beta 
