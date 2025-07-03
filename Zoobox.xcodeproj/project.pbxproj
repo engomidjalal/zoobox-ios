@@ -200,7 +200,7 @@
 				};
 			};
 			buildConfigurationList = 2EA1C5C72E0EF2C500567827 /* Build configuration list for PBXProject "Zoobox" */;
-			compatibilityVersion = "Xcode 15.3";
+			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
