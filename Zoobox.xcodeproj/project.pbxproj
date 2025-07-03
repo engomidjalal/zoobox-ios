@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -38,7 +38,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		2EA1C5F42E0EF2C700567827 /* Exceptions for "Zoobox" folder in "Zoobox" target */ = {
+		2EA1C5F42E0EF2C700567827 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -48,24 +48,9 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		2EA1C5CE2E0EF2C600567827 /* Zoobox */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				2EA1C5F42E0EF2C700567827 /* Exceptions for "Zoobox" folder in "Zoobox" target */,
-			);
-			path = Zoobox;
-			sourceTree = "<group>";
-		};
-		2EA1C5E52E0EF2C700567827 /* ZooboxTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ZooboxTests;
-			sourceTree = "<group>";
-		};
-		2EA1C5EF2E0EF2C700567827 /* ZooboxUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ZooboxUITests;
-			sourceTree = "<group>";
-		};
+		2EA1C5CE2E0EF2C600567827 /* Zoobox */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (2EA1C5F42E0EF2C700567827 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Zoobox; sourceTree = "<group>"; };
+		2EA1C5E52E0EF2C700567827 /* ZooboxTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ZooboxTests; sourceTree = "<group>"; };
+		2EA1C5EF2E0EF2C700567827 /* ZooboxUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ZooboxUITests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -215,6 +200,7 @@
 				};
 			};
 			buildConfigurationList = 2EA1C5C72E0EF2C500567827 /* Build configuration list for PBXProject "Zoobox" */;
+			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -226,7 +212,6 @@
 			packageReferences = (
 				2E3A612D2E11428200CBAEAD /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
-			preferredProjectObjectVersion = 77;
 			productRefGroup = 2EA1C5CD2E0EF2C600567827 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
