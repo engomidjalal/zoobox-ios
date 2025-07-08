@@ -7,7 +7,7 @@ class PermissionCheckViewController: UIViewController {
     private let containerView: UIView = {
         let view = UIView()
         view.backgroundColor = .white
-        view.layer.cornerRadius = 20
+        view.layer.cornerRadius = UIDevice.current.standardCornerRadius
         view.layer.shadowColor = UIColor.black.cgColor
         view.layer.shadowOffset = CGSize(width: 0, height: 4)
         view.layer.shadowRadius = 12
@@ -18,7 +18,7 @@ class PermissionCheckViewController: UIViewController {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.text = "System Check"
-        label.font = UIFont.systemFont(ofSize: 28, weight: .bold)
+        label.font = UIFont.systemFont(ofSize: 28 * UIDevice.current.fontSizeMultiplier, weight: .bold)
         label.textAlignment = .center
         label.textColor = .zooboxRed
         return label
@@ -41,7 +41,7 @@ class PermissionCheckViewController: UIViewController {
     private let statusLabel: UILabel = {
         let label = UILabel()
         label.text = "Checking permissions..."
-        label.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        label.font = UIFont.systemFont(ofSize: 16 * UIDevice.current.fontSizeMultiplier, weight: .medium)
         label.textAlignment = .center
         label.textColor = .zooboxRed
         return label
@@ -50,7 +50,7 @@ class PermissionCheckViewController: UIViewController {
     private let progressLabel: UILabel = {
         let label = UILabel()
         label.text = "0%"
-        label.font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+        label.font = UIFont.systemFont(ofSize: 14 * UIDevice.current.fontSizeMultiplier, weight: .semibold)
         label.textAlignment = .center
         label.textColor = .zooboxRed
         return label
@@ -89,12 +89,12 @@ class PermissionCheckViewController: UIViewController {
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
-            // Container
+            // Container - Device-specific constraints
             containerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             containerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            containerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
-            containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
-            containerView.heightAnchor.constraint(equalToConstant: 200),
+            containerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: UIDevice.current.standardPadding),
+            containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -UIDevice.current.standardPadding),
+            containerView.heightAnchor.constraint(equalToConstant: UIDevice.current.isIPad ? 300 : 200),
             
             // Title
             titleLabel.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 30),
@@ -165,11 +165,11 @@ class PermissionCheckViewController: UIViewController {
         // Update all permission statuses first
         permissionManager.updateAllPermissionStatuses()
         
-        // Get all required permissions
-        let requiredPermissions: [PermissionType] = [.location, .camera, .notifications]
+        // Get all permissions (now optional)
+        let allPermissions: [PermissionType] = [.location, .camera, .notifications]
         
         // Check which permissions are not granted
-        let notGrantedPermissions = requiredPermissions.filter { !permissionManager.isPermissionGranted(for: $0) }
+        let notGrantedPermissions = allPermissions.filter { !permissionManager.isPermissionGranted(for: $0) }
         
         if notGrantedPermissions.isEmpty {
             // All permissions are granted, proceed to main
@@ -178,9 +178,9 @@ class PermissionCheckViewController: UIViewController {
                 self.proceedToMain()
             }
         } else {
-            // Some permissions are missing, show what's needed
+            // Some permissions are missing, but that's okay
             let missingPermissions = notGrantedPermissions.map { $0.displayName }.joined(separator: ", ")
-            animateProgress(to: 1.0, status: "Missing permissions: \(missingPermissions)")
+            animateProgress(to: 1.0, status: "Optional permissions available: \(missingPermissions)")
             
             // Check if this is first run
             let isFirstRun = !UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
@@ -190,8 +190,8 @@ class PermissionCheckViewController: UIViewController {
                     // First run - show welcome and onboarding
                     self.showWelcomeAndOnboarding()
                 } else {
-                    // Subsequent runs - show permission request for missing ones
-                    self.showPermissionRequest(for: notGrantedPermissions)
+                    // Subsequent runs - proceed directly to main (permissions are optional)
+                    self.proceedToMain()
                 }
             }
         }
@@ -219,15 +219,27 @@ class PermissionCheckViewController: UIViewController {
     }
     
     private func proceedToMain() {
+        print("🔄 [PermissionCheck] Starting transition to MainViewController")
+        print("⏰ [PermissionCheck] Time: \(Date())")
+        
+        // Show loading indicator before transitioning to main app
+        print("📱 [PermissionCheck] Showing loading indicator")
+        showLoadingIndicator(message: "Loading Zoobox...")
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else { 
+                print("❌ [PermissionCheck] Self is nil in proceedToMain")
+                return 
+            }
+            
+            print("🔄 [PermissionCheck] About to present MainViewController")
             
             // Check if we're still the top view controller
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                   let window = windowScene.windows.first,
-                  let topViewController = window.rootViewController?.topMostViewController(),
+                  let topViewController = window.rootViewController?.topMostViewController,
                   topViewController == self else {
-                print("🚫 PermissionCheckViewController not top view controller - skipping navigation")
+                print("🚫 [PermissionCheck] Not top view controller - skipping navigation")
                 return
             }
             
@@ -237,8 +249,10 @@ class PermissionCheckViewController: UIViewController {
             mainVC.modalTransitionStyle = .crossDissolve
             
             self.present(mainVC, animated: true) {
-                print("✅ MainViewController presented successfully")
+                print("✅ [PermissionCheck] MainViewController presented successfully")
+                print("⏰ [PermissionCheck] MainViewController presented at: \(Date())")
+                // Keep loading indicator visible until MainViewController starts working
             }
         }
     }
-} 
+}

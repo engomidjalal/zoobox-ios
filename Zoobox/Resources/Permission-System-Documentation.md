@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Zoobox app now includes a comprehensive permission management system that allows the WebView to automatically use permissions that were already granted during app startup, and request new permissions with clear explanations when needed.
+The Zoobox app includes a comprehensive permission management system with **real-time cookie tracking** that automatically monitors permission changes and stores statuses in UserDefaults. The system also allows the WebView to use permissions and request new permissions with clear explanations when needed.
 
 ## 🎯 Key Features
 
@@ -26,6 +26,13 @@ The Zoobox app now includes a comprehensive permission management system that al
 - **Camera**: Photo capture and video recording
 - **Notifications**: Push notifications and alerts
 
+### ✅ **Real-time Cookie Tracking System**
+- **Automatic monitoring**: Tracks permission changes across app lifecycle
+- **UserDefaults storage**: Persistent permission cookies (`p_Location`, `p_Camera`, `p_Notification`)
+- **Settings detection**: Automatically detects when user returns from Settings
+- **ASAP updates**: Permission changes reflected immediately
+- **Comprehensive logging**: Detailed console output for every operation
+
 ## 🏗️ Architecture
 
 ### Core Components
@@ -43,6 +50,50 @@ The Zoobox app now includes a comprehensive permission management system that al
 3. **PermissionViewController** (`ViewControllers/PermissionViewController.swift`)
    - Initial app permission flow
    - Uses PermissionManager for consistency
+
+4. **Permission Cookie System** (`PermissionManager.swift`)
+   - Real-time permission tracking
+   - UserDefaults storage for persistence
+   - App state monitoring for Settings detection
+
+## 🍪 Cookie Tracking System
+
+### Permission Cookies
+The system automatically creates and maintains permission cookies in UserDefaults:
+
+- **`p_Location`** - Location permission status ("yes" / "no")
+- **`p_Camera`** - Camera permission status ("yes" / "no") 
+- **`p_Notification`** - Notification permission status ("yes" / "no")
+
+### Real-time Monitoring
+- **App Launch**: Initializes cookies with current permission status
+- **Permission Requests**: Updates cookies immediately when permissions are granted/denied
+- **Settings Changes**: Detects when user returns from Settings and updates cookies ASAP
+- **App Foreground**: Checks for permission changes when app enters foreground
+
+### Cookie API
+
+#### Get Individual Permission Cookie:
+```swift
+let locationStatus = PermissionManager.shared.getPermissionCookie(for: .location)
+// Returns "yes" or "no"
+```
+
+#### Get All Permission Cookies:
+```swift
+let allCookies = PermissionManager.shared.getAllPermissionCookies()
+// Returns: ["p_Location": "yes", "p_Camera": "no", "p_Notification": "yes"]
+```
+
+#### Force Update All Cookies:
+```swift
+PermissionManager.shared.forceUpdatePermissionCookies()
+```
+
+#### Log Permission Summary:
+```swift
+PermissionManager.shared.logPermissionSummary()
+```
 
 ## 🔧 How It Works
 

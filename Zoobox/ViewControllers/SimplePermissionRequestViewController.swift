@@ -87,8 +87,7 @@ class SimplePermissionRequestViewController: UIViewController {
         view.backgroundColor = .zooboxBackground
         setupUI()
         updatePermissionDisplay()
-        // Remove skip button from UI
-        skipButton.removeFromSuperview()
+        // Keep skip button - permissions are now optional
     }
     
     private func setupUI() {
@@ -191,7 +190,8 @@ class SimplePermissionRequestViewController: UIViewController {
     }
     
     @objc private func skipButtonTapped() {
-        // Remove skip logic entirely
+        // Skip all permissions and proceed to main
+        proceedToMain()
     }
     
     private func showPermissionDeniedAlert(for permission: PermissionType) {
@@ -200,18 +200,31 @@ class SimplePermissionRequestViewController: UIViewController {
             message: "\(permission.displayName) access is needed for \(permission.usageDescription.lowercased()).\n\nYou can enable it in Settings.",
             preferredStyle: .alert
         )
+        alert.addAction(UIAlertAction(title: "Continue Anyway", style: .cancel) { _ in
+            // Allow user to continue without this permission
+        })
         alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
         })
+        
+        // iPad-specific popover presentation
+        if UIDevice.current.isIPad {
+            if let popover = alert.popoverPresentationController {
+                popover.sourceView = self.view
+                popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+        }
+        
         present(alert, animated: true)
     }
     
     private func proceedToMain() {
         let mainVC = MainViewController()
-        mainVC.modalPresentationStyle = .fullScreen
-        mainVC.modalTransitionStyle = .crossDissolve
+        mainVC.modalPresentationStyle = UIModalPresentationStyle.fullScreen
+        mainVC.modalTransitionStyle = UIModalTransitionStyle.crossDissolve
         
         present(mainVC, animated: true) {
             print("✅ MainViewController presented successfully")

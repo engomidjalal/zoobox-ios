@@ -130,14 +130,24 @@ class LocationManager: NSObject {
             message: "Please enable location permissions in Settings to use Zoobox's location-based features and background tracking.",
             preferredStyle: .alert
         )
+        alert.addAction(UIAlertAction(title: "Continue Anyway", style: .cancel, handler: { _ in
+            self.permissionAlertShown = false
+        }))
         alert.addAction(UIAlertAction(title: "Open Settings", style: .default, handler: { _ in
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
         }))
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { _ in
-            self.permissionAlertShown = false
-        }))
+        
+        // iPad-specific popover presentation
+        if UIDevice.current.isIPad {
+            if let popover = alert.popoverPresentationController {
+                popover.sourceView = viewController.view
+                popover.sourceRect = CGRect(x: viewController.view.bounds.midX, y: viewController.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+        }
+        
         viewController.present(alert, animated: true)
     }
 

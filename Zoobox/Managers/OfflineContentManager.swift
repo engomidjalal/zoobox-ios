@@ -328,6 +328,19 @@ class OfflineContentManager: NSObject {
     // MARK: - Cache Management
     
     func cacheCurrentPage(_ webView: WKWebView) {
+        // DISABLED: JavaScript evaluation disabled to prevent EXC_BAD_ACCESS crashes
+        print("🔐 [OfflineContentManager] DISABLED: Page caching disabled to prevent EXC_BAD_ACCESS crashes")
+        print("🔐 [OfflineContentManager] DISABLED: Cannot extract HTML content via JavaScript")
+        
+        guard let currentURL = webView.url else { 
+            print("🔐 [OfflineContentManager] DISABLED: No current URL to cache")
+            return 
+        }
+        
+        print("🔐 [OfflineContentManager] DISABLED: Would have cached: \(currentURL.absoluteString)")
+        
+        /* DISABLED CODE THAT WAS CAUSING EXC_BAD_ACCESS CRASHES:
+        
         webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, error in
             guard let self = self,
                   let html = result as? String,
@@ -349,6 +362,8 @@ class OfflineContentManager: NSObject {
                 self.delegate?.offlineContentManager(self, didEncounterError: error)
             }
         }
+        
+        */
     }
     
     func loadCachedPage(_ url: URL, in webView: WKWebView) {

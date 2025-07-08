@@ -104,7 +104,7 @@ class SplashViewController: UIViewController {
             // Check if we're still the top view controller
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                   let window = windowScene.windows.first,
-                  let topViewController = window.rootViewController?.topMostViewController(),
+                  let topViewController = window.rootViewController?.topMostViewController,
                   topViewController == self else {
                 print("🚫 SplashViewController not top view controller - skipping navigation")
                 return

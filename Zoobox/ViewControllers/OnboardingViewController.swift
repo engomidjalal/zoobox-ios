@@ -265,7 +265,20 @@ class OnboardingViewController: UIViewController, PermissionManagerDelegate {
     
     // MARK: - Actions
     @objc private func nextButtonTapped() {
-        // No-op: permission flow is now automatic
+        // Update permission statuses to get current state
+        permissionManager.updateAllPermissionStatuses()
+        
+        // Check if any permissions are denied and show dialog if needed
+        let deniedPermissions = permissionManager.getDeniedPermissions()
+        
+        if !deniedPermissions.isEmpty {
+            // Some permissions were denied, show the optional permissions dialog
+            let deniedNames = deniedPermissions.map { $0.displayName }
+            showDeniedPermissionsAlert(deniedPermissions: deniedNames)
+        } else {
+            // No denied permissions, proceed to main app
+            proceedToMain()
+        }
     }
     
     @objc private func skipButtonTapped() {
@@ -367,6 +380,36 @@ class OnboardingViewController: UIViewController, PermissionManagerDelegate {
         }
     }
     
+    private func showDeniedPermissionsAlert(deniedPermissions: [String]) {
+        let permissionList = deniedPermissions.joined(separator: ", ")
+        let alert = UIAlertController(
+            title: "Optional Permissions",
+            message: "The following permissions were denied: \(permissionList).\n\nThese permissions help improve your experience but are not required. You can enable them later in Settings.",
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "Continue Anyway", style: .default) { _ in
+            self.proceedToMain()
+        })
+        
+        alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        })
+        
+        // iPad-specific popover presentation
+        if UIDevice.current.isIPad {
+            if let popover = alert.popoverPresentationController {
+                popover.sourceView = self.view
+                popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+        }
+        
+        present(alert, animated: true)
+    }
+    
     private func showPermissionDeniedAlert(for permission: PermissionItem, cardView: UIView) {
         let alert = UIAlertController(
             title: "\(permission.title) Permission Denied",
@@ -391,6 +434,20 @@ class OnboardingViewController: UIViewController, PermissionManagerDelegate {
             }
         })
         
+        alert.addAction(UIAlertAction(title: "Continue Anyway", style: .cancel) { _ in
+            // Allow user to continue without this permission
+            print("📱 User chose to continue without \(permission.title) permission")
+        })
+        
+        // iPad-specific popover presentation
+        if UIDevice.current.isIPad {
+            if let popover = alert.popoverPresentationController {
+                popover.sourceView = cardView
+                popover.sourceRect = cardView.bounds
+                popover.permittedArrowDirections = [.up, .down]
+            }
+        }
+        
         present(alert, animated: true)
     }
     
@@ -398,26 +455,17 @@ class OnboardingViewController: UIViewController, PermissionManagerDelegate {
         // Mark onboarding as completed
         UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         
-        // If this is the first launch, show the blocking permission UI
-        if UserDefaults.standard.bool(forKey: "hasSeenOnboarding") {
-            // Not first launch, go to main
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-               let sceneDelegate = windowScene.delegate as? SceneDelegate {
-                sceneDelegate.setMainViewControllerAsRoot()
-            } else {
-                let mainVC = MainViewController()
-                mainVC.modalPresentationStyle = .fullScreen
-                mainVC.modalTransitionStyle = .crossDissolve
-                present(mainVC, animated: true) {
-                    print("✅ MainViewController presented successfully")
-                }
-            }
+        // Go directly to main app - no blocking permission check
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let sceneDelegate = windowScene.delegate as? SceneDelegate {
+            sceneDelegate.setMainViewControllerAsRoot()
         } else {
-            // First launch: show blocking permission UI
-            let blockingVC = BlockingPermissionViewController()
-            blockingVC.modalPresentationStyle = .fullScreen
-            blockingVC.modalTransitionStyle = .crossDissolve
-            present(blockingVC, animated: true)
+            let mainVC = MainViewController()
+            mainVC.modalPresentationStyle = .fullScreen
+            mainVC.modalTransitionStyle = .crossDissolve
+            present(mainVC, animated: true) {
+                print("✅ MainViewController presented successfully")
+            }
         }
     }
     
@@ -461,23 +509,6 @@ class OnboardingViewController: UIViewController, PermissionManagerDelegate {
         } else {
             proceedToMain()
         }
-    }
-    
-    private func showDeniedPermissionsAlert(deniedPermissions: [String]) {
-        let permissionList = deniedPermissions.joined(separator: ", ")
-        let alert = UIAlertController(
-            title: "Permissions Required",
-            message: "The following permissions were denied: \(permissionList).\n\nYou must enable them in Settings to continue.",
-            preferredStyle: .alert
-        )
-        
-        alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
-            }
-        })
-        
-        present(alert, animated: true)
     }
     
     private func updateAllPermissionStatuses() {
@@ -537,6 +568,11 @@ class OnboardingViewController: UIViewController, PermissionManagerDelegate {
         
         if allGranted {
             // All permissions granted, automatically proceed
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.checkAllPermissionsAndProceed()
+            }
+        } else {
+            // Some permissions not granted, also proceed to check and show dialog if needed
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.checkAllPermissionsAndProceed()
             }

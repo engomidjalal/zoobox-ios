@@ -263,19 +263,25 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate, C
     }
     
     private func updateUI() {
-        if !isGpsEnabled {
-            // GPS is disabled
-            animateProgress(to: 1.0, status: "GPS is disabled. Enable location services to continue.")
-            gpsButton.isHidden = false
-            retryButton.isHidden = false
-        } else if !isInternetConnected {
-            // Internet is not available
+        // FIXED: Location is now optional - don't block users if GPS is disabled
+        // Apple Guideline 5.1.5 requires app to be fully functional without location
+        
+        if !isInternetConnected {
+            // Internet is not available - this is the only real blocker
             animateProgress(to: 1.0, status: "No Internet Connection. Please enable Wi-Fi or cellular data.")
             internetButton.isHidden = false
             retryButton.isHidden = false
         } else {
-            // Everything is OK, proceed
-            animateProgress(to: 1.0, status: "Connectivity OK! Proceeding...")
+            // Everything is OK, proceed regardless of GPS status
+            if !isGpsEnabled {
+                // GPS is disabled but that's OK - show info message but don't block
+                animateProgress(to: 1.0, status: "Ready to go! (Location services disabled - some features may be limited)")
+            } else {
+                // GPS is enabled - show success message
+                animateProgress(to: 1.0, status: "Connectivity OK! Proceeding...")
+            }
+            
+            // Always proceed to main after showing status
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 self.proceedToMain()
             }
@@ -371,7 +377,7 @@ class ConnectivityViewController: UIViewController, CLLocationManagerDelegate, C
             // Check if we're still the top view controller
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                   let window = windowScene.windows.first,
-                  let topViewController = window.rootViewController?.topMostViewController(),
+                  let topViewController = window.rootViewController?.topMostViewController,
                   topViewController == self else {
                 print("🚫 ConnectivityViewController not top view controller - skipping navigation")
                 return

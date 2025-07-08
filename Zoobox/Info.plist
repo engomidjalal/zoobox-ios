@@ -6,34 +6,13 @@
     <false/>
     <key>NSAppTransportSecurity</key>
     <dict>
-        <key>NSExceptionDomains</key>
-        <dict>
-            <key>mikmik.site</key>
-            <dict>
-                <!-- HTTP Exception Justification for App Store Review:
-                     - Legacy server infrastructure that cannot be immediately migrated to HTTPS
-                     - No sensitive user data transmitted over HTTP (only public content)
-                     - Temporary exception until HTTPS migration is completed
-                     - Minimum TLS version enforced for security -->
-                <key>NSExceptionAllowsInsecureHTTPLoads</key>
-                <true/>
-                <key>NSExceptionMinimumTLSVersion</key>
-                <string>TLSv1.2</string>
-                <key>NSExceptionRequiresForwardSecrecy</key>
-                <false/>
-            </dict>
-        </dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
     </dict>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Zoobox needs your location to show nearby services and enable deliveries.</string>
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Zoobox needs your location even in the background for delivery tracking.</string>
-    <key>NSLocationAlwaysUsageDescription</key>
-    <string>Zoobox requires your location even when the app is not in use to provide continuous delivery updates and location-based features.</string>
+    <string>Location access is completely optional. If enabled, Zoobox can show nearby services and help with deliveries, but the app works fully without it.</string>
     <key>NSCameraUsageDescription</key>
-    <string>Zoobox needs camera access to scan QR codes and upload documents.</string>
-    <key>NSUserNotificationUsageDescription</key>
-    <string>Zoobox uses notifications to update you about orders and deliveries.</string>
+    <string>Camera access is completely optional. If enabled, Zoobox can help you scan QR codes and upload photos, but the app works fully without it.</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
@@ -55,7 +34,6 @@
     </dict>
     <key>UIBackgroundModes</key>
     <array>
-        <string>location</string>
         <string>remote-notification</string>
     </array>
     <key>CFBundleDisplayName</key>
@@ -70,143 +48,13 @@
     <string>public.app-category.shopping</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>ITSPrivacyPolicyURL</key>
+    <string>https://zoobox.site/zoobox-privacy-policy.php</string>
     <key>LSApplicationQueriesSchemes</key>
     <array>
         <string>tel</string>
         <string>whatsapp</string>
         <string>viber</string>
-        <string>telegram</string>
-        <string>mailto</string>
-        <string>sms</string>
-        <string>maps</string>
-        <string>comgooglemaps</string>
-        <string>yandexmaps</string>
-        <string>baidumap</string>
-        <string>waze</string>
-        <string>skype</string>
-        <string>facetime</string>
-        <string>facetime-audio</string>
-        <string>instagram</string>
-        <string>twitter</string>
-        <string>facebook</string>
-        <string>linkedin</string>
-        <string>snapchat</string>
-        <string>tiktok</string>
-        <string>youtube</string>
-        <string>spotify</string>
-        <string>apple-music</string>
-        <string>uber</string>
-        <string>lyft</string>
-        <string>doordash</string>
-        <string>grubhub</string>
-        <string>postmates</string>
-        <string>instacart</string>
-        <string>amazon</string>
-        <string>ebay</string>
-        <string>paypal</string>
-        <string>venmo</string>
-        <string>cashapp</string>
-        <string>zelle</string>
-        <string>chase</string>
-        <string>bankofamerica</string>
-        <string>wellsfargo</string>
-        <string>citibank</string>
-        <string>usbank</string>
-        <string>pnc</string>
-        <string>capitalone</string>
-        <string>americanexpress</string>
-        <string>discover</string>
-        <string>visa</string>
-        <string>mastercard</string>
-        <string>amex</string>
-        <string>discovercard</string>
-        <string>chasepay</string>
-        <string>samsungpay</string>
-        <string>googlepay</string>
-        <string>applepay</string>
-        <string>walgreens</string>
-        <string>cvs</string>
-        <string>target</string>
-        <string>walmart</string>
-        <string>costco</string>
-        <string>samsclub</string>
-        <string>bestbuy</string>
-        <string>homedepot</string>
-        <string>lowes</string>
-        <string>michaels</string>
-        <string>joann</string>
-        <string>hobby-lobby</string>
-        <string>dickssportinggoods</string>
-        <string>academy</string>
-        <string>basspro</string>
-        <string>cabelas</string>
-        <string>rei</string>
-        <string>patagonia</string>
-        <string>northface</string>
-        <string>columbia</string>
-        <string>nike</string>
-        <string>adidas</string>
-        <string>underarmour</string>
-        <string>puma</string>
-        <string>reebok</string>
-        <string>newbalance</string>
-        <string>asics</string>
-        <string>brooks</string>
-        <string>saucony</string>
-        <string>hoka</string>
-        <string>on-running</string>
-        <string>altra</string>
-        <string>merrell</string>
-        <string>keen</string>
-        <string>teva</string>
-        <string>chaco</string>
-        <string>birkenstock</string>
-        <string>crocs</string>
-        <string>ugg</string>
-        <string>timberland</string>
-        <string>redwing</string>
-        <string>wolverine</string>
-        <string>carhartt</string>
-        <string>dickies</string>
-        <string>levis</string>
-        <string>wrangler</string>
-        <string>lee</string>
-        <string>gap</string>
-        <string>oldnavy</string>
-        <string>bananarepublic</string>
-        <string>athleta</string>
-        <string>jcrew</string>
-        <string>annetaylor</string>
-        <string>loft</string>
-        <string>express</string>
-        <string>hollister</string>
-        <string>abercrombie</string>
-        <string>american-eagle</string>
-        <string>urban-outfitters</string>
-        <string>anthropologie</string>
-        <string>free-people</string>
-        <string>madewell</string>
-        <string>everlane</string>
-        <string>reformation</string>
-        <string>revolve</string>
-        <string>shopbop</string>
-        <string>net-a-porter</string>
-        <string>farfetch</string>
-        <string>ssense</string>
-        <string>matchesfashion</string>
-        <string>luisaviaroma</string>
-        <string>mytheresa</string>
-        <string>modaoperandi</string>
-        <string>forward</string>
-        <string>goop</string>
-        <string>nordstrom</string>
-        <string>macys</string>
-        <string>bloomingdales</string>
-        <string>saks</string>
-        <string>neimanmarcus</string>
-        <string>bergdorfgoodman</string>
-        <string>barneys</string>
-        <string>intermix</string>
     </array>
 </dict>
 </plist>

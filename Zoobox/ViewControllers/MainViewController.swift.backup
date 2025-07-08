@@ -3,7 +3,7 @@ import WebKit
 import AVFoundation
 import CoreLocation
 
-class MainViewController: UIViewController, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate, ConnectivityManagerDelegate {
+class MainViewController: UIViewController {
     private var webView: NoZoomWKWebView!
 
     private var refreshControl: UIRefreshControl!
@@ -14,9 +14,6 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKUIDelegate
     private var loadingTimer: Timer?
     private var isWebViewLoaded = false
     private var pendingJSResponses: [String] = []
-    private var isWebViewFullyReady = false
-    private var webViewReadyTimer: Timer?
-    private var loadingIndicatorTimeout: Timer?
 
     
     // Device-specific timeout and retry values
@@ -43,9 +40,6 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKUIDelegate
         setupWebView()
         setupConnectivityManager()
         setupNotificationObservers()
-        
-        // Start location update service (only if permission already granted)
-        setupLocationUpdateService()
         
         // Remove bottom safe area completely
         additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 0, bottom: -view.safeAreaInsets.bottom, right: 0)
@@ -109,22 +103,26 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKUIDelegate
     }
     
     deinit {
-        // Clean up observers and timers
-        NotificationCenter.default.removeObserver(self)
-        loadingTimer?.invalidate()
-        webViewReadyTimer?.invalidate()
-        loadingIndicatorTimeout?.invalidate()
-        
-        // Clean up pending responses
-        pendingJSResponses.removeAll()
-        
         // Remove message handlers safely
         if let webView = webView {
             webView.configuration.userContentController.removeScriptMessageHandler(forName: "hapticFeedback")
             webView.configuration.userContentController.removeScriptMessageHandler(forName: "permissionBridge")
         }
         
-        print("🔄 [MainViewController] Deinitialized")
+        // Remove notification observers
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name("OpenDeepLinkURL"), object: nil)
+        
+        // Cancel loading timer
+        loadingTimer?.invalidate()
+        loadingTimer = nil
+        
+        // Clear pending JavaScript responses
+        pendingJSResponses.removeAll()
+        
+        // Clear WebView reference to prevent crashes
+        webView = nil
+        
+        print("🔐 MainViewController deallocated")
     }
     
     private func setupRefreshControl() {
@@ -801,12 +799,6 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKUIDelegate
         // Add refresh control to WebView's scroll view
         webView.scrollView.refreshControl = refreshControl
         
-        // Setup permission bridge BEFORE loading URL to prevent race conditions
-        setupPermissionBridge()
-        
-        // Setup custom URL scheme handler for geolocation
-        setupGeolocationURLSchemeHandler()
-        
         // Load default URL with device-specific timeout
         print("🔄 [MainViewController] About to load initial URL")
         print("📱 [WebView] Device: \(UIDevice.current.deviceFamily)")
@@ -820,6 +812,12 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKUIDelegate
             print("❌ [WebView] Failed to create URL")
         }
         print("✅ [MainViewController] WebView setup completed")
+        
+        // Setup permission bridge after WebView creation
+        setupPermissionBridge()
+        
+        // Setup custom URL scheme handler for geolocation
+        setupGeolocationURLSchemeHandler()
         
         } catch {
             print("❌ [WebView] Error during WebView setup: \(error)")
@@ -978,21 +976,6 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKUIDelegate
     
     private func setupConnectivityManager() {
         ConnectivityManager.shared.delegate = self
-    }
-    
-    private func setupLocationUpdateService() {
-        let locationService = LocationUpdateService.shared
-        print("📍 [MainViewController] Setting up location update service")
-        
-        // Only start location services if permission is already granted
-        // This prevents triggering permission requests after onboarding is complete
-        let authStatus = CLLocationManager.authorizationStatus()
-        if authStatus == .authorizedWhenInUse || authStatus == .authorizedAlways {
-            locationService.startLocationServices()
-            print("📍 [MainViewController] Location services started - permission already granted")
-        } else {
-            print("📍 [MainViewController] Location services not started - permission not granted")
-        }
     }
     
     private func setupNotificationObservers() {
@@ -1440,971 +1423,16 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKUIDelegate
         
         present(alert, animated: true)
     }
-    
-    // MARK: - Authentication Error Handling
-    
-    func isAuthenticationError(_ error: Error) -> Bool {
-        let errorDescription = error.localizedDescription.lowercased()
-        let errorDomain = (error as NSError).domain
-        let errorCode = (error as NSError).code
-        
-        // Enhanced authentication error detection for iPad
-        let isAuth = errorDescription.contains("sign") ||
-                    errorDescription.contains("login") ||
-                    errorDescription.contains("authentication") ||
-                    errorDescription.contains("unauthorized") ||
-                    errorDescription.contains("forbidden") ||
-                    errorDescription.contains("session") ||
-                    errorDescription.contains("credential") ||
-                    errorDomain.contains("authentication") ||
-                    errorCode == 401 ||
-                    errorCode == 403 ||
-                    errorCode == 498 || // Token expired
-                    errorCode == 499    // Token required
-        
-        if isAuth {
-            print("🔐 [iPad Auth] Authentication error detected: \(error)")
-            print("🔐 [iPad Auth] Error domain: \(errorDomain)")
-            print("🔐 [iPad Auth] Error code: \(errorCode)")
-            print("🔐 [iPad Auth] Error description: \(errorDescription)")
-        }
-        
-        return isAuth
-    }
-    
-    func handleAuthenticationError(_ error: Error) {
-        print("🔐 [iPad Auth] Handling authentication error: \(error)")
-        
-        // Show user-friendly authentication error with iPad-specific handling
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            // Create iPad-optimized error message
-            let title = "Connection Issue"
-            let message = UIDevice.current.isIPad ? 
-                "There was a temporary issue connecting to Zoobox on your iPad. Please try again in a moment." :
-                "There was a temporary issue connecting to Zoobox. Please try again in a moment."
-            
-            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-            
-            // Add retry action with iPad-specific delay
-            alert.addAction(UIAlertAction(title: "Retry", style: .default) { _ in
-                // Add iPad-specific retry delay
-                let retryDelay = UIDevice.current.isIPad ? 2.0 : 1.0
-                DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) {
-                    self.retryLoad()
-                }
-            })
-            
-            // Add cancel action
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-            
-            // iPad-specific popover presentation
-            if UIDevice.current.isIPad {
-                if let popover = alert.popoverPresentationController {
-                    popover.sourceView = self.view
-                    popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
-                    popover.permittedArrowDirections = []
-                }
-            }
-            
-            self.present(alert, animated: true)
-        }
-    }
-    
-    // MARK: - Helper Methods for WKScriptMessageHandler
-    
-    func handleHapticFeedback(message: WKScriptMessage) {
-        guard let feedbackType = message.body as? String else { return }
-        
-        print("📱 [HapticFeedback] Triggering \(feedbackType) haptic feedback")
-        
-        DispatchQueue.main.async {
-            switch feedbackType {
-            case "light":
-                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-                impactFeedback.impactOccurred()
-            case "medium":
-                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                impactFeedback.impactOccurred()
-            case "heavy":
-                let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
-                impactFeedback.impactOccurred()
-            case "success":
-                let notificationFeedback = UINotificationFeedbackGenerator()
-                notificationFeedback.notificationOccurred(.success)
-            case "warning":
-                let notificationFeedback = UINotificationFeedbackGenerator()
-                notificationFeedback.notificationOccurred(.warning)
-            case "error":
-                let notificationFeedback = UINotificationFeedbackGenerator()
-                notificationFeedback.notificationOccurred(.error)
-            default:
-                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-                impactFeedback.impactOccurred()
-            }
-        }
-    }
-    
-    func handlePermissionBridge(message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any],
-              let action = body["action"] as? String else {
-            print("🔐 Invalid permission bridge message")
-            return
-        }
-        
-        switch action {
-        case "checkPermission":
-            handleCheckPermission(body)
-        case "getAllPermissions":
-            handleGetAllPermissions()
-        default:
-            print("🔐 Unknown permission bridge action: \(action)")
-        }
-    }
-    
-    func handleCheckPermission(_ body: [String: Any]) {
-        guard let permissionType = body["permissionType"] as? String else {
-            print("🔐 Missing permission type in checkPermission")
-            return
-        }
-        
-        // Handle location permission on main thread to avoid crashes
-        if permissionType == "location" {
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else {
-                    print("🔐 Self is nil, skipping permission response")
-                    return
-                }
-                
-                guard let webView = self.webView else {
-                    print("🔐 WebView is nil, skipping permission response")
-                    return
-                }
-                
-                // Additional safety check - ensure WebView has a valid URL
-                guard webView.url != nil else {
-                    print("🔐 WebView URL is nil, skipping permission response")
-                    return
-                }
-                
-                let locationStatus = CLLocationManager.authorizationStatus()
-                let isGranted = locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse
-                
-                let responseScript = "if (window.ZooboxPermissionBridge && window.ZooboxPermissionBridge._resolvePermission) { window.ZooboxPermissionBridge._resolvePermission('\(permissionType)', \(isGranted)); } else { console.log('🔐 ZooboxPermissionBridge not ready yet'); }"
-                
-                // Add a small delay to ensure JavaScript bridge is fully initialized
-                let executeScript = {
-                    // Use the safer JavaScript execution method
-                    self.executeSafeJavaScript(responseScript)
-                }
-                
-                // Execute immediately if WebView is loaded, otherwise add a small delay
-                if self.isWebViewLoaded {
-                    executeScript()
-                } else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        executeScript()
-                    }
-                }
-                
-                print("🔐 Permission check for \(permissionType): \(isGranted)")
-            }
-        } else {
-            // Handle other permissions on background thread
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let isGranted: Bool
-                switch permissionType {
-                case "camera":
-                    isGranted = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
-                case "microphone":
-                    isGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-                default:
-                    isGranted = false
-                }
-                
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else {
-                        print("🔐 Self is nil, skipping permission response")
-                        return
-                    }
-                    
-                    guard let webView = self.webView else {
-                        print("🔐 WebView is nil, skipping permission response")
-                        return
-                    }
-                    
-                    // Additional safety check - ensure WebView has a valid URL
-                    guard webView.url != nil else {
-                        print("🔐 WebView URL is nil, skipping permission response")
-                        return
-                    }
-                    
-                    let responseScript = "if (window.ZooboxPermissionBridge && window.ZooboxPermissionBridge._resolvePermission) { window.ZooboxPermissionBridge._resolvePermission('\(permissionType)', \(isGranted)); } else { console.log('🔐 ZooboxPermissionBridge not ready yet'); }"
-                    
-                    // Add a small delay to ensure JavaScript bridge is fully initialized
-                    let executeScript = {
-                        // Use the safer JavaScript execution method
-                        self.executeSafeJavaScript(responseScript)
-                    }
-                    
-                    // Execute immediately if WebView is loaded, otherwise add a small delay
-                    if self.isWebViewLoaded {
-                        executeScript()
-                    } else {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            executeScript()
-                        }
-                    }
-                    
-                    print("🔐 Permission check for \(permissionType): \(isGranted)")
-                }
-            }
-        }
-    }
-    
-    func handleGetAllPermissions() {
-        // Get location permission on main thread first
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                print("🔐 Self is nil, skipping all permissions response")
-                return
-            }
-            
-            guard let webView = self.webView else {
-                print("🔐 WebView is nil, skipping all permissions response")
-                return
-            }
-            
-            // Additional safety check - ensure WebView has a valid URL
-            guard webView.url != nil else {
-                print("🔐 WebView URL is nil, skipping all permissions response")
-                return
-            }
-            
-            let locationStatus = CLLocationManager.authorizationStatus()
-            let locationGranted = locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse
-            
-            // Get other permissions on background thread
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let permissions: [String: Bool] = [
-                    "camera": AVCaptureDevice.authorizationStatus(for: .video) == .authorized,
-                    "location": locationGranted,
-                    "microphone": AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-                ]
-                
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else {
-                        print("🔐 Self is nil, skipping all permissions response")
-                        return
-                    }
-                    
-                    guard let webView = self.webView else {
-                        print("🔐 WebView is nil, skipping all permissions response")
-                        return
-                    }
-                    
-                    // Additional safety check - ensure WebView has a valid URL
-                    guard webView.url != nil else {
-                        print("🔐 WebView URL is nil, skipping all permissions response")
-                        return
-                    }
-                    
-                    if let jsonData = try? JSONSerialization.data(withJSONObject: permissions),
-                       let jsonString = String(data: jsonData, encoding: .utf8) {
-                        let responseScript = "if (window.ZooboxPermissionBridge && window.ZooboxPermissionBridge._resolveAllPermissions) { window.ZooboxPermissionBridge._resolveAllPermissions(\(jsonString)); } else { console.log('🔐 ZooboxPermissionBridge not ready yet'); }"
-                        
-                        if self.isWebViewLoaded && webView.url != nil {
-                            // Use the safer JavaScript execution method
-                            self.executeSafeJavaScript(responseScript)
-                        } else {
-                            if !self.pendingJSResponses.contains(responseScript) {
-                                self.pendingJSResponses.append(responseScript)
-                            }
-                        }
-                    }
-                    print("🔐 All permissions status: \(permissions)")
-                }
-            }
-        }
-    }
-    
-    // Add a retry mechanism for permission bridge JavaScript execution
-    private func executeJavaScriptWithRetry(_ script: String, retryCount: Int = 0, maxRetries: Int = 3) {
-        // Ensure we're on the main thread
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.executeJavaScriptWithRetry(script, retryCount: retryCount, maxRetries: maxRetries)
-            }
-            return
-        }
-        
-        guard let webView = self.webView else {
-            print("🔐 WebView is nil, cannot execute JavaScript")
-            return
-        }
-        
-        guard webView.url != nil else {
-            print("🔐 WebView URL is nil, cannot execute JavaScript")
-            return
-        }
-        
-        // Additional safety checks
-        guard !webView.isLoading else {
-            print("🔐 WebView is still loading, delaying JavaScript execution")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.executeJavaScriptWithRetry(script, retryCount: retryCount, maxRetries: maxRetries)
-            }
-            return
-        }
-        
-        // Check if WebView has a valid navigation state
-        guard webView.canGoBack || webView.canGoForward || webView.url?.absoluteString.contains("mikmik.site") == true else {
-            print("🔐 WebView navigation state invalid, delaying JavaScript execution")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.executeJavaScriptWithRetry(script, retryCount: retryCount, maxRetries: maxRetries)
-            }
-            return
-        }
-        
-        // Wrap in a try-catch equivalent using objective-c exception handling
-        autoreleasepool {
-            // First, test if the WebView can execute JavaScript at all
-            let testScript = "typeof window !== 'undefined'"
-            
-            webView.evaluateJavaScript(testScript) { [weak self] testResult, testError in
-                guard let self = self else { return }
-                
-                if let testError = testError {
-                    print("🔐 WebView JavaScript context test failed: \(testError)")
-                    
-                    if retryCount < maxRetries {
-                        print("🔐 Retrying JavaScript execution (attempt \(retryCount + 1)/\(maxRetries + 1))")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            self.executeJavaScriptWithRetry(script, retryCount: retryCount + 1, maxRetries: maxRetries)
-                        }
-                    } else {
-                        print("🔐 Failed to execute JavaScript after \(maxRetries + 1) attempts, adding to pending")
-                        if !self.pendingJSResponses.contains(script) {
-                            self.pendingJSResponses.append(script)
-                        }
-                    }
-                    return
-                }
-                
-                // If test passed, execute the actual script
-                webView.evaluateJavaScript(script) { [weak self] result, error in
-                    guard let self = self else { return }
-                    
-                    if let error = error {
-                        print("🔐 Error executing JavaScript (attempt \(retryCount + 1)/\(maxRetries + 1)): \(error)")
-                        
-                        if retryCount < maxRetries {
-                            // Retry after a longer delay
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                self.executeJavaScriptWithRetry(script, retryCount: retryCount + 1, maxRetries: maxRetries)
-                            }
-                        } else {
-                            print("🔐 Failed to execute JavaScript after \(maxRetries + 1) attempts")
-                            // Add to pending responses as last resort
-                            if !self.pendingJSResponses.contains(script) {
-                                self.pendingJSResponses.append(script)
-                            }
-                        }
-                    } else {
-                        print("🔐 Successfully executed JavaScript")
-                    }
-                }
-            }
-        }
-    }
-    
-    // Check if WebView is fully ready for JavaScript execution
-    // SIMPLIFIED VERSION: Skips JavaScript testing to avoid hangs
-    private func checkWebViewReadiness() {
-        print("🔐 [WebViewReadiness] Using simplified readiness check")
-        
-        guard let webView = self.webView else {
-            print("🔐 [WebViewReadiness] WebView is nil, marking as not ready")
-            isWebViewFullyReady = false
-            return
-        }
-        
-        guard webView.url != nil, !webView.isLoading else {
-            print("🔐 [WebViewReadiness] WebView URL is nil or still loading, marking as not ready")
-            isWebViewFullyReady = false
-            return
-        }
-        
-        // Skip the problematic JavaScript testing and mark as ready immediately
-        print("🔐 [WebViewReadiness] WebView appears loaded, marking as ready without JavaScript testing")
-        isWebViewFullyReady = true
-        
-        // Process any pending JavaScript
-        processPendingJavaScript()
-        
-        print("🔐 [WebViewReadiness] ✅ WebView marked as ready (simplified)")
-        return
-    }
-    
-    // LEGACY: Complex readiness check with JavaScript testing (DISABLED due to hangs)
-    private func checkWebViewReadinessWithJSTesting() {
-        // Ensure we're on the main thread
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.checkWebViewReadiness()
-            }
-            return
-        }
-        
-        print("🔐 [WebViewReadiness] Starting readiness check")
-        
-        guard let webView = self.webView else {
-            print("🔐 [WebViewReadiness] WebView is nil, marking as not ready")
-            isWebViewFullyReady = false
-            return
-        }
-        
-        guard webView.url != nil, !webView.isLoading else {
-            print("🔐 [WebViewReadiness] WebView URL is nil or still loading, marking as not ready")
-            isWebViewFullyReady = false
-            return
-        }
-        
-        print("🔐 [WebViewReadiness] WebView appears ready, testing JavaScript context")
-        
-        // Add a small delay to ensure the WebView has fully committed the navigation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self = self else { return }
-            
-            guard let webView = self.webView else {
-                print("🔐 [WebViewReadiness] WebView became nil during delay")
-                self.isWebViewFullyReady = false
-                return
-            }
-            
-            // Test if JavaScript context is available with a simpler test first
-            let testScript = "typeof window"
-            print("🔐 [WebViewReadiness] Testing JavaScript context with: \(testScript)")
-            
-            // Add timeout protection for JavaScript evaluation
-            var hasResponded = false
-            let timeoutTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
-                guard let self = self else { return }
-                if !hasResponded {
-                    print("🔐 [WebViewReadiness] ⚠️ JavaScript evaluation timed out after 3 seconds!")
-                    hasResponded = true // Prevent duplicate calls
-                    self.handleReadinessTimeout()
-                }
-            }
-            
-            webView.evaluateJavaScript(testScript) { [weak self] result, error in
-                guard let self = self else { return }
-                
-                hasResponded = true
-                timeoutTimer.invalidate()
-                
-                if let error = error {
-                    print("🔐 [WebViewReadiness] JavaScript context test failed: \(error)")
-                    self.isWebViewFullyReady = false
-                    
-                    // Schedule another check with a longer delay
-                    self.webViewReadyTimer?.invalidate()
-                    self.webViewReadyTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
-                        print("🔐 [WebViewReadiness] Retrying readiness check after error")
-                        self.checkWebViewReadiness()
-                    }
-                    return
-                }
-                
-                print("🔐 [WebViewReadiness] Basic JavaScript test passed: \(result ?? "nil")")
-                
-                // If basic test passed, try the full test
-                let fullTestScript = "typeof window !== 'undefined' && typeof document !== 'undefined'"
-                print("🔐 [WebViewReadiness] Testing full JavaScript context with: \(fullTestScript)")
-                
-                var fullTestResponded = false
-                let fullTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
-                    guard let self = self else { return }
-                    if !fullTestResponded {
-                        print("🔐 [WebViewReadiness] ⚠️ Full JavaScript evaluation timed out after 3 seconds!")
-                        fullTestResponded = true // Prevent duplicate calls
-                        self.handleReadinessTimeout()
-                    }
-                }
-                
-                webView.evaluateJavaScript(fullTestScript) { [weak self] fullResult, fullError in
-                    guard let self = self else { return }
-                    
-                    fullTestResponded = true
-                    fullTimeoutTimer.invalidate()
-                    
-                    if fullError == nil, let isReady = fullResult as? Bool, isReady {
-                        self.isWebViewFullyReady = true
-                        print("🔐 [WebViewReadiness] ✅ WebView is fully ready for JavaScript execution!")
-                        
-                        // Process any pending JavaScript
-                        self.processPendingJavaScript()
-                    } else {
-                        print("🔐 [WebViewReadiness] Full JavaScript test failed: \(fullError?.localizedDescription ?? "unknown result")")
-                        print("🔐 [WebViewReadiness] Full result: \(fullResult ?? "nil")")
-                        self.isWebViewFullyReady = false
-                        
-                        // Schedule another check
-                        self.webViewReadyTimer?.invalidate()
-                        self.webViewReadyTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
-                            print("🔐 [WebViewReadiness] Retrying readiness check after full test failure")
-                            self.checkWebViewReadiness()
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // Handle readiness check timeouts
-    private func handleReadinessTimeout() {
-        print("🔐 [WebViewReadiness] ⚠️ Timeout occurred, forcing ready state")
-        
-        // Cancel any existing timer to prevent duplicate calls
-        webViewReadyTimer?.invalidate()
-        webViewReadyTimer = nil
-        
-        // Force ready state
-        isWebViewFullyReady = true
-        
-        // Process any pending JavaScript with timeout protection
-        processPendingJavaScript()
-        
-        print("🔐 [WebViewReadiness] ✅ Ready state forced due to timeout")
-    }
-    
-    // Process pending JavaScript when WebView is ready
-    // DISABLED: ALL JavaScript evaluation disabled to prevent EXC_BAD_ACCESS crashes
-    private func processPendingJavaScript() {
-        print("🔐 [PendingJS] DISABLED: Processing pending JavaScript disabled to prevent EXC_BAD_ACCESS crashes")
-        
-        if !pendingJSResponses.isEmpty {
-            print("🔐 [PendingJS] DISABLED: \(pendingJSResponses.count) JavaScript calls were queued but not executed")
-            for (index, script) in pendingJSResponses.enumerated() {
-                print("🔐 [PendingJS] DISABLED: Script \(index + 1): \(script.prefix(50))...")
-            }
-        }
-        
-        // Clear pending responses without executing them to prevent crashes
-        pendingJSResponses.removeAll()
-        print("🔐 [PendingJS] DISABLED: Cleared all pending JavaScript calls without execution")
-        
-        /* DISABLED CODE THAT WAS CAUSING EXC_BAD_ACCESS CRASHES:
-        
-        guard isWebViewFullyReady, let webView = self.webView else { 
-            print("🔐 [PendingJS] Cannot process pending JavaScript - WebView not ready or nil")
-            return 
-        }
-        
-        print("🔐 [PendingJS] Processing \(pendingJSResponses.count) pending JavaScript calls")
-        
-        for (index, script) in pendingJSResponses.enumerated() {
-            autoreleasepool {
-                print("🔐 [PendingJS] Executing script \(index + 1)/\(pendingJSResponses.count): \(script.prefix(50))...")
-                webView.evaluateJavaScript(script) { result, error in
-                    if let error = error {
-                        print("🔐 [PendingJS] Error executing script \(index + 1): \(error)")
-                    } else {
-                        print("🔐 [PendingJS] Successfully executed script \(index + 1)")
-                    }
-                }
-            }
-        }
-        
-        pendingJSResponses.removeAll()
-        print("🔐 [PendingJS] Cleared all pending JavaScript calls")
-        
-        */
-    }
-    
-    // Manual debug method to check WebView state and force readiness check
-    func debugWebViewState() {
-        print("🔐 [DEBUG] =================== WebView State Debug ===================")
-        print("🔐 [DEBUG] WebView: \(webView != nil ? "EXISTS" : "NIL")")
-        print("🔐 [DEBUG] WebView URL: \(webView?.url?.absoluteString ?? "nil")")
-        print("🔐 [DEBUG] WebView isLoading: \(webView?.isLoading ?? false)")
-        print("🔐 [DEBUG] isWebViewLoaded: \(isWebViewLoaded)")
-        print("🔐 [DEBUG] isWebViewFullyReady: \(isWebViewFullyReady)")
-        print("🔐 [DEBUG] pendingJSResponses count: \(pendingJSResponses.count)")
-        print("🔐 [DEBUG] webViewReadyTimer: \(webViewReadyTimer != nil ? "ACTIVE" : "NIL")")
-        
-        if !pendingJSResponses.isEmpty {
-            print("🔐 [DEBUG] Pending JavaScript calls:")
-            for (index, script) in pendingJSResponses.enumerated() {
-                print("🔐 [DEBUG]   \(index + 1). \(script.prefix(100))...")
-            }
-        }
-        
-        // Force readiness check
-        print("🔐 [DEBUG] Forcing readiness check...")
-        checkWebViewReadiness()
-        
-        print("🔐 [DEBUG] ========================================================")
-    }
-    
-    // Convenience method to manually force WebView readiness - call from debugger
-    func forceWebViewReady() {
-        print("🔐 [FORCE] Manually forcing WebView ready state")
-        
-        // Cancel any ongoing timers
-        webViewReadyTimer?.invalidate()
-        webViewReadyTimer = nil
-        
-        // Force ready state
-        isWebViewFullyReady = true
-        processPendingJavaScript()
-    }
-    
-    // Fallback method that skips JavaScript testing entirely
-    func forceWebViewReadyWithoutJS() {
-        print("🔐 [FALLBACK] Forcing WebView ready without JavaScript testing")
-        
-        guard let webView = self.webView else {
-            print("🔐 [FALLBACK] WebView is nil, cannot force ready")
-            return
-        }
-        
-        guard webView.url != nil else {
-            print("🔐 [FALLBACK] WebView URL is nil, cannot force ready")
-            return
-        }
-        
-        // Cancel any ongoing timers
-        webViewReadyTimer?.invalidate()
-        webViewReadyTimer = nil
-        
-        // Skip all JavaScript testing and force ready
-        isWebViewFullyReady = true
-        
-        print("🔐 [FALLBACK] ✅ WebView forced ready without JavaScript testing")
-        
-        // Process pending JavaScript if any
-        processPendingJavaScript()
-    }
-    
-    // Test JavaScript execution directly - call from debugger
-    // DISABLED: ALL JavaScript evaluation disabled to prevent EXC_BAD_ACCESS crashes
-    func testJavaScriptExecution() {
-        print("🔐 [TEST] DISABLED: JavaScript testing disabled to prevent EXC_BAD_ACCESS crashes")
-        print("🔐 [TEST] DISABLED: WebView JavaScript evaluation causes memory access violations")
-        print("🔐 [TEST] DISABLED: Use native iOS APIs instead of JavaScript for functionality")
-        
-        /* DISABLED CODE THAT WAS CAUSING EXC_BAD_ACCESS CRASHES:
-        
-        guard let webView = self.webView else {
-            print("🔐 [TEST] WebView is nil, cannot test JavaScript")
-            return
-        }
-        
-        print("🔐 [TEST] Testing direct JavaScript execution...")
-        
-        let testScript = "typeof window"
-        webView.evaluateJavaScript(testScript) { result, error in
-            if let error = error {
-                print("🔐 [TEST] ❌ JavaScript execution failed: \(error)")
-            } else {
-                print("🔐 [TEST] ✅ JavaScript execution succeeded: \(result ?? "nil")")
-            }
-        }
-        
-        */
-    }
-    
-    // Safe JavaScript execution that waits for WebView readiness
-    // DISABLED: ALL JavaScript evaluation disabled to prevent EXC_BAD_ACCESS crashes
-    private func executeSafeJavaScript(_ script: String) {
-        // CRITICAL: JavaScript evaluation in WebView causes EXC_BAD_ACCESS crashes
-        // Completely disabled to prevent app crashes
-        print("🔐 [SafeJS] DISABLED: JavaScript execution disabled to prevent EXC_BAD_ACCESS crashes")
-        print("🔐 [SafeJS] DISABLED: Script would have been: \(script.prefix(100))...")
-        print("🔐 [SafeJS] DISABLED: WebView JavaScript evaluation causes memory access violations")
-        
-        // Do not execute any JavaScript to prevent crashes
-        return
-        
-        /* DISABLED CODE THAT WAS CAUSING EXC_BAD_ACCESS CRASHES:
-        
-        // Ensure we're on the main thread
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.executeSafeJavaScript(script)
-            }
-            return
-        }
-        
-        guard let webView = self.webView else {
-            print("🔐 [SafeJS] WebView is nil, cannot execute JavaScript")
-            return
-        }
-        
-        guard webView.url != nil else {
-            print("🔐 [SafeJS] WebView URL is nil, adding script to pending queue")
-            if !pendingJSResponses.contains(script) {
-                pendingJSResponses.append(script)
-            }
-            return
-        }
-        
-        if isWebViewFullyReady {
-            // Execute immediately with timeout protection
-            print("🔐 [SafeJS] Executing JavaScript: \(script.prefix(50))...")
-            autoreleasepool {
-                webView.evaluateJavaScript(script) { result, error in
-                    if let error = error {
-                        print("🔐 [SafeJS] Error executing JavaScript: \(error)")
-                    } else {
-                        print("🔐 [SafeJS] Successfully executed JavaScript")
-                    }
-                }
-            }
-        } else {
-            // Add to pending queue - simplified approach will process it soon
-            if !pendingJSResponses.contains(script) {
-                pendingJSResponses.append(script)
-                print("🔐 [SafeJS] Added JavaScript to pending queue (WebView not ready yet)")
-            }
-            
-            // Force ready state after short delay if needed
-            if webViewReadyTimer == nil {
-                webViewReadyTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-                    guard let self = self else { return }
-                    print("🔐 [SafeJS] Forcing ready state due to pending JavaScript")
-                    self.forceWebViewReadyWithoutJS()
-                }
-            }
-        }
-        
-        */
-    }
-    
-    // Test geolocation functionality for debugging
-    private func testGeolocationAvailability() {
-        print("🔐 [DISABLED] testGeolocationAvailability() called but disabled to prevent EXC_BAD_ACCESS crashes")
-        print("🔐 [DISABLED] JavaScript evaluation in WebView can cause memory access violations")
-        
-        guard let webView = self.webView else {
-            print("🔐 Cannot test geolocation - WebView is nil")
-            return
-        }
-        
-        // Only do safe, non-JavaScript tests
-        let locationStatus = CLLocationManager.authorizationStatus()
-        print("🔐 Native location permission status: \(locationStatus)")
-        
-        // Skip all JavaScript evaluation calls as they cause EXC_BAD_ACCESS crashes
-        print("🔐 Skipping all JavaScript geolocation tests to prevent crashes")
-        
-        /* DISABLED - ALL JAVASCRIPT CALLS THAT WERE CAUSING CRASHES:
-        
-        // Test 1: Check if navigator.geolocation exists
-        webView.evaluateJavaScript("typeof navigator.geolocation") { result, error in
-            if let error = error {
-                print("🔐 Geolocation test 1 error: \(error)")
-            } else {
-                print("🔐 navigator.geolocation type: \(result as? String ?? "unknown")")
-            }
-        }
-        
-        // Test 2: Check if getCurrentPosition exists
-        webView.evaluateJavaScript("typeof navigator.geolocation.getCurrentPosition") { result, error in
-            if let error = error {
-                print("🔐 Geolocation test 2 error: \(error)")
-            } else {
-                print("🔐 navigator.geolocation.getCurrentPosition type: \(result as? String ?? "unknown")")
-            }
-        }
-        
-        // Test 3: Check if our permission bridge exists
-        webView.evaluateJavaScript("typeof window.ZooboxPermissionBridge") { result, error in
-            if let error = error {
-                print("🔐 Permission bridge test error: \(error)")
-            } else {
-                print("🔐 ZooboxPermissionBridge type: \(result as? String ?? "unknown")")
-            }
-        }
-        
-        // Test 5: Try to get location permission status through bridge
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            webView.evaluateJavaScript("window.ZooboxPermissionBridge ? window.ZooboxPermissionBridge.checkLocationPermission() : 'bridge not available'") { result, error in
-                if let error = error {
-                    print("🔐 Permission bridge location check error: \(error)")
-                } else {
-                    print("🔐 Permission bridge location check result: \(result ?? "nil")")
-                }
-            }
-        }
-        
-        */
-    }
-    
-    // MARK: - Safe Permission Management
-    
-    // Request native location permission safely
-    private func requestNativeLocationPermission(completion: @escaping (Bool) -> Void) {
-        print("🔐 [Permission] REMOVED: Native permission request disabled by user request")
-        print("🔐 [Permission] WebView will handle all permission requests using standard prompts")
-        
-        // REMOVED: All native permission request functionality
-        // - No CLLocationManager setup
-        // - No permission delegate handling
-        // - WebView will use standard permission flow
-        
-        completion(false) // Always return false since we're not handling permissions
-    }
-    
-    // Safely inject permission status into WebView without evaluateJavaScript
-    private func injectPermissionStatusSafely() {
-        print("🔐 [Permission] REMOVED: All permission injection functionality removed by user request")
-        print("🔐 [Permission] WebView will handle permissions using standard browser behavior")
-        
-        // REMOVED: All permission injection code removed
-        // - No JavaScript injection
-        // - No UserScript injection  
-        // - No cookie-based permission forwarding
-        // - WebView will use standard permission prompts
-        
-        print("🔐 [Permission] ✅ Permission system disabled - using standard WebView behavior")
-    }
-    
-    // Set permission status as cookie
-    private func setPermissionCookie(type: String, granted: Bool) {
-        print("🔐 [Cookie] REMOVED: Cookie-based permission system disabled by user request")
-        print("🔐 [Cookie] No permission cookies will be set")
-        
-        // REMOVED: All cookie-based permission functionality
-        // - No zoobox_permission_location cookies
-        // - No automatic cookie setting
-        // - WebView will handle permissions natively
-        
-        print("🔐 [Cookie] ✅ Cookie permission system disabled")
-    }
-    
-    // Inject permission status via UserScript (runs when page loads)
-    private func injectPermissionUserScript(locationGranted: Bool) {
-        print("🔐 [UserScript] REMOVED: UserScript injection disabled by user request")
-        print("🔐 [UserScript] No JavaScript will be injected into WebView")
-        
-        // REMOVED: All UserScript injection functionality
-        // - No window.zooboxPermissions injection
-        // - No custom event dispatching
-        // - No permission status scripts
-        // - WebView will use standard JavaScript environment
-        
-        print("🔐 [UserScript] ✅ UserScript injection disabled")
-    }
-    
-    // Trigger permission update (safe page refresh)
-    private func triggerPermissionUpdate() {
-        print("🔐 [Permission] DISABLED: Page refresh disabled to prevent infinite loading loop")
-        print("🔐 [Permission] Permissions are now set via cookies without page refresh")
-        
-        // DISABLED: This was causing infinite loading loop
-        // guard let webView = self.webView else { return }
-        // 
-        // print("🔐 [Permission] Triggering permission update")
-        // 
-        // // Trigger a gentle reload to ensure new permissions are recognized
-        // if let currentURL = webView.url {
-        //     print("🔐 [Permission] Refreshing current page to update permissions")
-        //     webView.load(URLRequest(url: currentURL))
-        // }
-    }
-    
-    // Setup WebView user scripts (haptic, viewport, etc.)
-    private func setupWebViewUserScripts() {
-        guard let webView = self.webView else { return }
-        
-        let userContentController = webView.configuration.userContentController
-        
-        // SAFETY: Remove existing handler first to prevent "already exists" crash
-        userContentController.removeScriptMessageHandler(forName: "hapticFeedback")
-        
-        // Re-add haptic feedback handler safely
-        userContentController.add(self, name: "hapticFeedback")
-        
-        // Note: Other scripts (viewport, CSS, haptic) are added during WebView setup
-        // This method ensures they're preserved when we update permission scripts
-    }
-    
-    // Test method to manually check geolocation permission status - call from debugger
-    func testLocationPermissionForWebView() {
-        print("🔐 [TEST] 🌍 TESTING LOCATION PERMISSION STATUS")
-        print("🔐 [TEST] ==========================================")
-        
-        let locationStatus = CLLocationManager.authorizationStatus()
-        print("🔐 [TEST] Native iOS location status: \(locationStatus.rawValue)")
-        print("🔐 [TEST] Status description: \(locationStatusDescription(locationStatus))")
-        
-        let isGranted = locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse
-        print("🔐 [TEST] Is location granted: \(isGranted)")
-        
-        if let webView = self.webView {
-            print("🔐 [TEST] WebView exists: ✅")
-            print("🔐 [TEST] WebView URL: \(webView.url?.absoluteString ?? "nil")")
-            
-            // Check if there are any cookies set
-            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                print("🔐 [TEST] Total cookies: \(cookies.count)")
-                let permissionCookies = cookies.filter { $0.name.contains("zoobox_permission") }
-                print("🔐 [TEST] Permission cookies: \(permissionCookies.count)")
-                
-                for cookie in permissionCookies {
-                    print("🔐 [TEST] Cookie: \(cookie.name) = \(cookie.value)")
-                }
-            }
-        } else {
-            print("🔐 [TEST] WebView exists: ❌")
-        }
-        
-        print("🔐 [TEST] ==========================================")
-    }
-    
-    // Helper method to describe location status
-    private func locationStatusDescription(_ status: CLAuthorizationStatus) -> String {
-        switch status {
-        case .notDetermined:
-            return "Not Determined"
-        case .restricted:
-            return "Restricted"
-        case .denied:
-            return "Denied"
-        case .authorizedAlways:
-            return "Authorized Always"
-        case .authorizedWhenInUse:
-            return "Authorized When In Use"
-        @unknown default:
-            return "Unknown"
-        }
-    }
-    
-    // Debug method to test what the website can see - call from debugger
-    func debugWebsitePermissions() {
-        print("🔐 [DEBUG] REMOVED: Debug methods removed - permission system disabled")
-        print("🔐 [DEBUG] WebView now uses standard behavior only")
-    }
-    
-    
 }
 
 // MARK: - WKNavigationDelegate
-extension MainViewController {
+extension MainViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         print("🔄 [WebView] didStartProvisionalNavigation called")
         print("⏰ [WebView] didStartProvisionalNavigation time: \(Date())")
         print("📱 [WebView] Device: \(UIDevice.current.deviceFamily)")
         print("📱 [WebView] Orientation: \(UIDevice.current.orientationString)")
         print("📱 [WebView] Screen size: \(UIScreen.main.bounds.size)")
-        print("🔐 [WebView] URL: \(webView.url?.absoluteString ?? "nil")")
-        
-        // Reset WebView readiness state
-        isWebViewFullyReady = false
-        webViewReadyTimer?.invalidate()
         
         currentNavigation = navigation
         startLoadingTimer()
@@ -2417,22 +1445,6 @@ extension MainViewController {
     
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         print("📄 WebView committed navigation")
-        print("🔐 [WebView] Committed URL: \(webView.url?.absoluteString ?? "nil")")
-        
-        // DISABLED: Test geolocation availability after commit
-        // This JavaScript evaluation was causing EXC_BAD_ACCESS crashes
-        // DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-        //     webView.evaluateJavaScript("typeof navigator.geolocation !== 'undefined'") { result, error in
-        //         if let error = error {
-        //             print("🔐 Geolocation availability check error: \(error)")
-        //         } else {
-        //             print("🔐 Geolocation available in WebView: \(result as? Bool ?? false)")
-        //         }
-        //     }
-        // }
-        
-        // Instead, just log that geolocation is assumed available
-        print("🔐 Geolocation assumed available in WebView (skipping JavaScript test)")
     }
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -2442,315 +1454,454 @@ extension MainViewController {
             
             self.isWebViewLoaded = true
             
+            // Safely evaluate pending JavaScript responses
+            for js in self.pendingJSResponses {
+                // Add safety check for WebView
+                guard let webView = self.webView else {
+                    print("🔐 WebView is nil, skipping JavaScript evaluation")
+                    break
+                }
+                
+                webView.evaluateJavaScript(js) { result, error in
+                    if let error = error {
+                        print("🔐 Error evaluating pending JavaScript: \(error)")
+                    }
+                }
+            }
+            self.pendingJSResponses.removeAll()
             print("✅ [WebView] didFinish called - WebView loaded successfully")
             print("⏰ [WebView] didFinish time: \(Date())")
             print("📱 [WebView] Device: \(UIDevice.current.deviceFamily)")
             print("📱 [WebView] Orientation: \(UIDevice.current.orientationString)")
             print("📱 [WebView] Screen size: \(UIScreen.main.bounds.size)")
-            print("🔐 [WebView] Final URL: \(webView.url?.absoluteString ?? "nil")")
             
             // Cancel loading timer
-            self.loadingTimer?.invalidate()
+            loadingTimer?.invalidate()
             
             // Reset error state on successful load
-            self.lastError = nil
-            self.retryCount = 0
+            lastError = nil
+            retryCount = 0
             
-            // ALWAYS hide loading indicator when webview finishes loading
+            // Hide loading indicator when webview finishes loading with a small delay
             print("📱 [WebView] Hiding loading indicator - webview finished loading")
-            LoadingIndicatorManager.shared.hideLoadingIndicator()
-            
-            // SIMPLIFIED: Skip JavaScript readiness check and mark as ready immediately
-            // The complex JavaScript testing was causing hangs, so we use a simpler approach
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self = self else { return }
-                
-                print("🔐 [SIMPLIFIED] Marking WebView as ready without JavaScript testing")
-                self.isWebViewFullyReady = true
-                
-                // Process any pending JavaScript
-                self.processPendingJavaScript()
-                
-                print("🔐 [SIMPLIFIED] ✅ WebView ready state set")
-                
-                // REMOVED: Auto-inject that was causing loading loop
-                // print("🔐 [AutoInject] Automatically injecting permissions into new page")
-                // self.injectPermissionStatusSafely()
-                
-                print("🔐 [AutoInject] DISABLED: Auto-injection disabled to prevent loading loop")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                LoadingIndicatorManager.shared.hideLoadingIndicator()
             }
+            
+            
+            
+            
             
             // If refresh control is refreshing, show success
-            if self.refreshControl.isRefreshing {
-                self.showRefreshSuccess()
+            if refreshControl.isRefreshing {
+                showRefreshSuccess()
             }
-            
-            // Trigger location update on webview refresh
-            LocationUpdateService.shared.onWebViewRefresh()
             
             print("✅ [WebView] didFinish completed")
         }
-    }
-    
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        print("❌ WebView failed to load: \(error)")
-        print("❌ Error domain: \((error as NSError).domain)")
-        print("❌ Error code: \((error as NSError).code)")
-        print("❌ Error description: \(error.localizedDescription)")
         
-        // iPad-specific error logging
-        if UIDevice.current.isIPad {
-            print("📱 [iPad] WebView error on iPad device")
-            print("📱 [iPad] Device: \(UIDevice.current.model)")
-            print("📱 [iPad] iOS Version: \(UIDevice.current.systemVersion)")
-        }
         
-        // Cancel loading timer
-        loadingTimer?.invalidate()
         
-        // Hide loading indicator when webview fails
-        print("📱 [WebView] Hiding loading indicator - webview failed")
-        LoadingIndicatorManager.shared.hideLoadingIndicator()
         
-        // Enhanced error handling for iPad
-        let nsError = error as NSError
         
-        // Check for authentication/sign-in errors with iPad-specific handling
-        if isAuthenticationError(error) {
-            handleAuthenticationError(error)
-            return
-        }
-        
-        // iPad-specific error recovery
-        if UIDevice.current.isIPad && nsError.domain == "WebKitErrorDomain" && nsError.code == 102 {
-            // Frame load interrupted on iPad - attempt recovery
-            print("📱 [iPad] Frame load interrupted - attempting recovery")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                self.retryLoad()
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            print("❌ WebView failed to load: \(error)")
+            
+            // Cancel loading timer
+            loadingTimer?.invalidate()
+            
+            // Hide loading indicator when webview fails
+            print("📱 [WebView] Hiding loading indicator - webview failed")
+            LoadingIndicatorManager.shared.hideLoadingIndicator()
+            
+            // Check for authentication/sign-in errors
+            if isAuthenticationError(error) {
+                handleAuthenticationError(error)
+                return
             }
-            return
-        }
-        
-        // Handle other errors normally
-        handleWebViewError(error)
-        
-        // If refresh control is refreshing, show error
-        if refreshControl.isRefreshing {
-            showRefreshError()
-        }
-    }
-    
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        print("❌ WebView failed to load (provisional): \(error)")
-        print("❌ Provisional error domain: \((error as NSError).domain)")
-        print("❌ Provisional error code: \((error as NSError).code)")
-        print("❌ Provisional error description: \(error.localizedDescription)")
-        
-        // iPad-specific provisional error logging
-        if UIDevice.current.isIPad {
-            print("📱 [iPad] Provisional navigation error on iPad device")
-            print("📱 [iPad] This may be related to iPad-specific WebView behavior")
-        }
-        
-        // Cancel loading timer
-        loadingTimer?.invalidate()
-        
-        // Hide loading indicator when webview fails
-        print("📱 [WebView] Hiding loading indicator - webview failed (provisional)")
-        LoadingIndicatorManager.shared.hideLoadingIndicator()
-        
-        // Enhanced provisional error handling for iPad
-        let nsError = error as NSError
-        
-        // Check for authentication/sign-in errors with iPad-specific handling
-        if isAuthenticationError(error) {
-            handleAuthenticationError(error)
-            return
-        }
-        
-        // iPad-specific provisional error recovery
-        if UIDevice.current.isIPad && nsError.domain == "NSURLErrorDomain" && nsError.code == -1001 {
-            // Timeout on iPad - use longer timeout
-            print("📱 [iPad] Request timeout - using iPad-specific retry logic")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                self.retryLoad()
+            
+            // Handle error
+            handleWebViewError(error)
+            
+            // If refresh control is refreshing, show error
+            if refreshControl.isRefreshing {
+                showRefreshError()
             }
-            return
         }
         
-        // Handle other errors normally
-        handleWebViewError(error)
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            print("❌ WebView failed to load (provisional): \(error)")
+            
+            // Cancel loading timer
+            loadingTimer?.invalidate()
+            
+            // Hide loading indicator when webview fails
+            print("📱 [WebView] Hiding loading indicator - webview failed (provisional)")
+            LoadingIndicatorManager.shared.hideLoadingIndicator()
+            
+            // Check for authentication/sign-in errors
+            if isAuthenticationError(error) {
+                handleAuthenticationError(error)
+                return
+            }
+            
+            // Handle error
+            handleWebViewError(error)
+            
+            // If refresh control is refreshing, show error
+            if refreshControl.isRefreshing {
+                showRefreshError()
+            }
+        }
         
-        // If refresh control is refreshing, show error
-        if refreshControl.isRefreshing {
-            showRefreshError()
+        func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+            print("🔄 WebView received server redirect")
         }
-    }
-    
-    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
-        print("🔄 WebView received server redirect")
-    }
-    
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // Allow all navigation actions by default
-        decisionHandler(.allow)
-    }
-    
-    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        // Allow all navigation responses by default
-        decisionHandler(.allow)
-    }
-}
-
-// MARK: - WKScriptMessageHandler
-extension MainViewController {
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        if message.name == "hapticFeedback" {
-            handleHapticFeedback(message: message)
-        } else if message.name == "permissionBridge" {
-            handlePermissionBridge(message: message)
-        }
-    }
-}
-
-// MARK: - ConnectivityManagerDelegate
-extension MainViewController {
-    func connectivityManager(_ manager: ConnectivityManager, didUpdateConnectivityStatus status: ConnectivityStatus) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.updateRefreshControlForConnectivity()
-        }
-    }
-    
-    func connectivityManager(_ manager: ConnectivityManager, didUpdateGPSStatus enabled: Bool) {
-        // GPS status updates can be handled here if needed
-        print("📡 GPS status updated: \(enabled)")
-    }
-}
-
-// MARK: - WKUIDelegate
-extension MainViewController {
-    // iOS 15+: Intercept media (camera/microphone) permission requests
-    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        print("🔐 WebView requesting media capture permission for type: \(type)")
         
-        if type == .camera {
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            // Allow all navigation actions by default
+            decisionHandler(.allow)
+        }
+        
+        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+            // Allow all navigation responses by default
+            decisionHandler(.allow)
+        }
+        
+        // MARK: - Authentication Error Handling
+        
+        private func isAuthenticationError(_ error: Error) -> Bool {
+            let errorDescription = error.localizedDescription.lowercased()
+            let errorDomain = (error as NSError).domain
+            
+            // Check for common authentication error patterns
+            return errorDescription.contains("sign") ||
+            errorDescription.contains("login") ||
+            errorDescription.contains("authentication") ||
+            errorDescription.contains("unauthorized") ||
+            errorDescription.contains("forbidden") ||
+            errorDomain.contains("authentication") ||
+            (error as NSError).code == 401 ||
+            (error as NSError).code == 403
+        }
+        
+        private func handleAuthenticationError(_ error: Error) {
+            print("🔐 Authentication error detected: \(error)")
+            
+            // Show user-friendly authentication error
+            DispatchQueue.main.async {
+                let alert = UIAlertController(
+                    title: "Connection Issue",
+                    message: "There was a temporary issue connecting to Zoobox. Please try again in a moment.",
+                    preferredStyle: .alert
+                )
+                
+                alert.addAction(UIAlertAction(title: "Retry", style: .default) { _ in
+                    self.retryLoad()
+                })
+                
+                alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                
+                // iPad-specific popover presentation
+                if UIDevice.current.isIPad {
+                    if let popover = alert.popoverPresentationController {
+                        popover.sourceView = self.view
+                        popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+                        popover.permittedArrowDirections = []
+                    }
+                }
+                
+                self.present(alert, animated: true)
+            }
+        }
+    }
+    
+    // MARK: - WKScriptMessageHandler
+    extension MainViewController: WKScriptMessageHandler {
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "hapticFeedback" {
+                handleHapticFeedback(message: message)
+            } else if message.name == "permissionBridge" {
+                handlePermissionBridge(message: message)
+            }
+        }
+        
+        private func handleHapticFeedback(message: WKScriptMessage) {
+            guard let feedbackType = message.body as? String else { return }
+            
+            print("📱 [HapticFeedback] Triggering \(feedbackType) haptic feedback")
+            
+            DispatchQueue.main.async {
+                switch feedbackType {
+                case "light":
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                    impactFeedback.impactOccurred()
+                case "medium":
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                    impactFeedback.impactOccurred()
+                case "heavy":
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
+                    impactFeedback.impactOccurred()
+                case "success":
+                    let notificationFeedback = UINotificationFeedbackGenerator()
+                    notificationFeedback.notificationOccurred(.success)
+                case "warning":
+                    let notificationFeedback = UINotificationFeedbackGenerator()
+                    notificationFeedback.notificationOccurred(.warning)
+                case "error":
+                    let notificationFeedback = UINotificationFeedbackGenerator()
+                    notificationFeedback.notificationOccurred(.error)
+                default:
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                    impactFeedback.impactOccurred()
+                }
+            }
+        }
+        
+        private func handlePermissionBridge(message: WKScriptMessage) {
+            guard let body = message.body as? [String: Any],
+                  let action = body["action"] as? String else {
+                print("🔐 Invalid permission bridge message")
+                return
+            }
+            
+            switch action {
+            case "checkPermission":
+                handleCheckPermission(body)
+            case "getAllPermissions":
+                handleGetAllPermissions()
+            default:
+                print("🔐 Unknown permission bridge action: \(action)")
+            }
+        }
+        
+        private func handleCheckPermission(_ body: [String: Any]) {
+            guard let permissionType = body["permissionType"] as? String else {
+                print("🔐 Missing permission type in checkPermission")
+                return
+            }
+            
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let isGranted: Bool
+                switch permissionType {
+                case "camera":
+                    isGranted = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+                case "location":
+                    let locationStatus = CLLocationManager.authorizationStatus()
+                    isGranted = locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse
+                case "microphone":
+                    isGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+                default:
+                    isGranted = false
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else {
+                        print("🔐 Self is nil, skipping permission response")
+                        return
+                    }
+                    
+                    guard let webView = self.webView else {
+                        print("🔐 WebView is nil, skipping permission response")
+                        return
+                    }
+                    
+                    let responseScript = "window.ZooboxPermissionBridge._resolvePermission('\(permissionType)', \(isGranted));"
+                    
+                    if self.isWebViewLoaded {
+                        // Add safety check before evaluation
+                        webView.evaluateJavaScript(responseScript) { result, error in
+                            if let error = error {
+                                print("🔐 Error resolving permission callback: \(error)")
+                            }
+                        }
+                    } else {
+                        self.pendingJSResponses.append(responseScript)
+                    }
+                    print("🔐 Permission check for \(permissionType): \(isGranted)")
+                }
+            }
+        }
+        
+        private func handleGetAllPermissions() {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let permissions: [String: Bool] = [
+                    "camera": AVCaptureDevice.authorizationStatus(for: .video) == .authorized,
+                    "location": {
+                        let locationStatus = CLLocationManager.authorizationStatus()
+                        return locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse
+                    }(),
+                    "microphone": AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+                ]
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else {
+                        print("🔐 Self is nil, skipping all permissions response")
+                        return
+                    }
+                    
+                    guard let webView = self.webView else {
+                        print("🔐 WebView is nil, skipping all permissions response")
+                        return
+                    }
+                    
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: permissions),
+                       let jsonString = String(data: jsonData, encoding: .utf8) {
+                        let responseScript = "window.ZooboxPermissionBridge._resolveAllPermissions(\(jsonString));"
+                        
+                        if self.isWebViewLoaded {
+                            // Add safety check before evaluation
+                            webView.evaluateJavaScript(responseScript) { result, error in
+                                if let error = error {
+                                    print("🔐 Error resolving all permissions callback: \(error)")
+                                }
+                            }
+                        } else {
+                            self.pendingJSResponses.append(responseScript)
+                        }
+                    }
+                    print("🔐 All permissions status: \(permissions)")
+                }
+            }
+        }
+    }
+    
+    // MARK: - ConnectivityManagerDelegate
+    extension MainViewController: ConnectivityManagerDelegate {
+        func connectivityManager(_ manager: ConnectivityManager, didUpdateConnectivityStatus status: ConnectivityStatus) {
+            DispatchQueue.main.async {
+                self.updateRefreshControlForConnectivity()
+            }
+        }
+        
+        func connectivityManager(_ manager: ConnectivityManager, didUpdateGPSStatus enabled: Bool) {
+            // GPS status updates can be handled here if needed
+            print("📡 GPS status updated: \(enabled)")
+        }
+    }
+    
+    // MARK: - WKUIDelegate
+    extension MainViewController: WKUIDelegate {
+        // iOS 15+: Intercept media (camera/microphone) permission requests
+        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+            if type == .camera {
+                // Move to background thread to prevent main thread blocking
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+                    DispatchQueue.main.async { [weak self] in
+                        guard let _ = self else {
+                            decisionHandler(.prompt)
+                            return
+                        }
+                        
+                        if cameraStatus == .authorized {
+                            decisionHandler(.grant)
+                            return
+                        }
+                        // For microphone or if not granted, use default prompt
+                        decisionHandler(.prompt)
+                    }
+                }
+            } else {
+                // For microphone or if not granted, use default prompt
+                decisionHandler(.prompt)
+            }
+        }
+        
+        // iOS 15+: Intercept geolocation permission requests
+        func webView(_ webView: WKWebView, requestGeolocationPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
             // Move to background thread to prevent main thread blocking
             DispatchQueue.global(qos: .userInitiated).async {
-                let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
-                print("🔐 Native camera permission status: \(cameraStatus)")
-                
+                let locationStatus = CLLocationManager.authorizationStatus()
                 DispatchQueue.main.async { [weak self] in
                     guard let _ = self else {
-                        print("🔐 Self is nil, prompting for camera permission")
                         decisionHandler(.prompt)
                         return
                     }
                     
-                    if cameraStatus == .authorized {
-                        print("🔐 Camera permission granted natively, granting to WebView")
+                    if locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse {
                         decisionHandler(.grant)
                         return
                     }
-                    print("🔐 Camera permission not granted natively, prompting user")
                     decisionHandler(.prompt)
                 }
             }
-        } else {
-            print("🔐 Non-camera media capture request, prompting user")
-            decisionHandler(.prompt)
         }
-    }
-    
-    // iOS 15+: Intercept geolocation permission requests
-    func webView(_ webView: WKWebView, requestGeolocationPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        print("🔐 [WebView] 📍 Geolocation permission request (using standard behavior)")
-        print("🔐 [WebView] Origin: \(origin.host)")
         
-        // SIMPLIFIED: Use standard WebView permission behavior
-        // No auto-granting, no custom logic, just standard browser prompts
-        print("🔐 [WebView] Using standard permission prompt for user")
-        decisionHandler(.prompt)
-    }
-    
-    // Handle JavaScript alerts (including geolocation prompts)
-    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-        print("🔐 JavaScript alert panel with message: \(message)")
-        
-        // Check if this is a geolocation permission request
-        if message.contains("would like to use your current location") ||
-           message.contains("use your precise location") ||
-           message.contains("mikmik.site") {
-            
-            print("🔐 Detected geolocation permission request in alert")
-            
-            // Check location status on main thread to avoid crashes
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else {
-                    print("🔐 Self is nil, completing alert")
-                    completionHandler()
-                    return
+        // Handle JavaScript alerts (including geolocation prompts)
+        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+            // Check if this is a geolocation permission request
+            if message.contains("would like to use your current location") ||
+                message.contains("use your precise location") ||
+                message.contains("mikmik.site") {
+                
+                // Move to background thread to prevent main thread blocking
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let locationStatus = CLLocationManager.authorizationStatus()
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else {
+                            completionHandler()
+                            return
+                        }
+                        
+                        if locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse {
+                            // Permission already granted, automatically allow
+                            print("🔐 Geolocation permission already granted, automatically allowing")
+                            completionHandler()
+                            return
+                        }
+                        
+                        // For other alerts, show normal alert
+                        let alert = UIAlertController(title: "Zoobox", message: message, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                            completionHandler()
+                        })
+                        self.present(alert, animated: true)
+                    }
                 }
-                
-                let locationStatus = CLLocationManager.authorizationStatus()
-                print("🔐 Native location permission status for alert: \(locationStatus)")
-                
-                if locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse {
-                    // Permission already granted, automatically allow
-                    print("🔐 Geolocation permission already granted, automatically allowing alert")
-                    completionHandler()
-                    return
-                }
-                
-                print("🔐 Showing geolocation permission alert to user")
+            } else {
                 // For other alerts, show normal alert
                 let alert = UIAlertController(title: "Zoobox", message: message, preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
                     completionHandler()
                 })
-                self.present(alert, animated: true)
+                present(alert, animated: true)
             }
-        } else {
-            print("🔐 Showing regular JavaScript alert to user")
-            // For other alerts, show normal alert
-            let alert = UIAlertController(title: "Zoobox", message: message, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
-                completionHandler()
-            })
-            present(alert, animated: true)
         }
-    }
-    
-    // Handle JavaScript confirm dialogs (including geolocation permission dialogs)
-    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        print("🔐 JavaScript confirm panel with message: \(message)")
         
-        // Check if this is a geolocation permission request
-        if message.contains("would like to use your current location") ||
-           message.contains("use your precise location") ||
-           message.contains("mikmik.site") {
-            
-            print("🔐 Detected geolocation permission request in confirm dialog")
-            
-            // Check location status on main thread to avoid crashes
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else {
-                    print("🔐 Self is nil, denying confirm dialog")
-                    completionHandler(false)
-                    return
+        // Handle JavaScript confirm dialogs (including geolocation permission dialogs)
+        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+            // Check if this is a geolocation permission request
+            if message.contains("would like to use your current location") ||
+                message.contains("use your precise location") ||
+                message.contains("mikmik.site") {
+                
+                // Move to background thread to prevent main thread blocking
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let locationStatus = CLLocationManager.authorizationStatus()
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else {
+                            completionHandler(false)
+                            return
+                        }
+                        
+                        if locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse {
+                            // Permission already granted, automatically allow
+                            print("🔐 Geolocation permission already granted, automatically allowing")
+                            completionHandler(true)
+                            return
+                        }
+                        
+                        // For other confirms, show normal alert
+                        let alert = UIAlertController(title: "Zoobox", message: message, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                            completionHandler(true)
+                        })
+                        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+                            completionHandler(false)
+                        })
+                        self.present(alert, animated: true)
+                    }
                 }
-                
-                let locationStatus = CLLocationManager.authorizationStatus()
-                print("🔐 Native location permission status for confirm: \(locationStatus)")
-                
-                if locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse {
-                    // Permission already granted, automatically allow
-                    print("🔐 Geolocation permission already granted, automatically allowing confirm")
-                    completionHandler(true)
-                    return
-                }
-                
-                print("🔐 Showing geolocation permission confirm dialog to user")
+            } else {
                 // For other confirms, show normal alert
                 let alert = UIAlertController(title: "Zoobox", message: message, preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
@@ -2759,158 +1910,61 @@ extension MainViewController {
                 alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
                     completionHandler(false)
                 })
-                self.present(alert, animated: true)
+                present(alert, animated: true)
             }
-        } else {
-            print("🔐 Showing regular JavaScript confirm dialog to user")
-            // For other confirms, show normal alert
-            let alert = UIAlertController(title: "Zoobox", message: message, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
-                completionHandler(true)
-            })
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
-                completionHandler(false)
-            })
-            present(alert, animated: true)
         }
     }
-}
-
-// MARK: - Geolocation URL Scheme Handler
-class GeolocationURLSchemeHandler: NSObject, WKURLSchemeHandler {
-    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
-        print("🔐 Geolocation URL scheme request intercepted: \(urlSchemeTask.request.url?.absoluteString ?? "unknown")")
-        
-        // Check location status on main thread to avoid crashes
-        DispatchQueue.main.async {
-            // Check if native location permission is granted
-            let locationStatus = CLLocationManager.authorizationStatus()
+    
+    // MARK: - Geolocation URL Scheme Handler
+    class GeolocationURLSchemeHandler: NSObject, WKURLSchemeHandler {
+        func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+            print("🔐 Geolocation URL scheme request intercepted: \(urlSchemeTask.request.url?.absoluteString ?? "unknown")")
             
-            if locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse {
-                // Permission granted, return success response
-                let response = HTTPURLResponse(
-                    url: urlSchemeTask.request.url!,
-                    statusCode: 200,
-                    httpVersion: "HTTP/1.1",
-                    headerFields: ["Content-Type": "application/json"]
-                )
+            // Move to background thread to prevent main thread blocking
+            DispatchQueue.global(qos: .userInitiated).async {
+                // Check if native location permission is granted
+                let locationStatus = CLLocationManager.authorizationStatus()
                 
-                let responseData = "{\"status\":\"granted\",\"message\":\"Location permission already granted\"}".data(using: .utf8)
-                
-                urlSchemeTask.didReceive(response!)
-                urlSchemeTask.didReceive(responseData!)
-                urlSchemeTask.didFinish()
-                
-                print("🔐 Geolocation request handled - permission already granted")
-            } else {
-                // Permission not granted, return error response
-                let response = HTTPURLResponse(
-                    url: urlSchemeTask.request.url!,
-                    statusCode: 403,
-                    httpVersion: "HTTP/1.1",
-                    headerFields: ["Content-Type": "application/json"]
-                )
-                
-                let responseData = "{\"error\":\"Location permission not granted\"}".data(using: .utf8)
-                
-                urlSchemeTask.didReceive(response!)
-                urlSchemeTask.didReceive(responseData!)
-                urlSchemeTask.didFinish()
-                
-                print("🔐 Geolocation request handled - permission not granted")
+                DispatchQueue.main.async {
+                    if locationStatus == .authorizedAlways || locationStatus == .authorizedWhenInUse {
+                        // Permission granted, return success response
+                        let response = HTTPURLResponse(
+                            url: urlSchemeTask.request.url!,
+                            statusCode: 200,
+                            httpVersion: "HTTP/1.1",
+                            headerFields: ["Content-Type": "application/json"]
+                        )
+                        
+                        let responseData = "{\"status\":\"granted\",\"message\":\"Location permission already granted\"}".data(using: .utf8)
+                        
+                        urlSchemeTask.didReceive(response!)
+                        urlSchemeTask.didReceive(responseData!)
+                        urlSchemeTask.didFinish()
+                        
+                        print("🔐 Geolocation request handled - permission already granted")
+                    } else {
+                        // Permission not granted, return error response
+                        let response = HTTPURLResponse(
+                            url: urlSchemeTask.request.url!,
+                            statusCode: 403,
+                            httpVersion: "HTTP/1.1",
+                            headerFields: ["Content-Type": "application/json"]
+                        )
+                        
+                        let responseData = "{\"error\":\"Location permission not granted\"}".data(using: .utf8)
+                        
+                        urlSchemeTask.didReceive(response!)
+                        urlSchemeTask.didReceive(responseData!)
+                        urlSchemeTask.didFinish()
+                        
+                        print("🔐 Geolocation request handled - permission not granted")
+                    }
+                }
             }
         }
-    }
-    
-    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
-        print("🔐 Geolocation URL scheme task stopped")
-    }
-}
-
-// MARK: - Location Permission Delegate
-class LocationPermissionDelegate: NSObject, CLLocationManagerDelegate {
-    private let completion: (Bool) -> Void
-    
-    init(completion: @escaping (Bool) -> Void) {
-        self.completion = completion
-        super.init()
-    }
-    
-    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        print("🔐 [LocationDelegate] Authorization changed to: \(status.rawValue)")
         
-        switch status {
-        case .authorizedAlways, .authorizedWhenInUse:
-            print("🔐 [LocationDelegate] ✅ Permission granted")
-            completion(true)
-        case .denied, .restricted:
-            print("🔐 [LocationDelegate] ❌ Permission denied")
-            completion(false)
-        case .notDetermined:
-            print("🔐 [LocationDelegate] 🤔 Still not determined")
-            // Don't call completion yet, wait for another callback
-        @unknown default:
-            print("🔐 [LocationDelegate] ❓ Unknown status")
-            completion(false)
+        func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
+            print("🔐 Geolocation URL scheme task stopped")
         }
     }
-}
 
-// MARK: - Permission Monitor
-class PermissionMonitor: NSObject {
-    static let shared = PermissionMonitor()
-    
-    private var locationManager: CLLocationManager?
-    private weak var mainViewController: MainViewController?
-    
-    override init() {
-        super.init()
-        setupLocationMonitoring()
-    }
-    
-    func setMainViewController(_ viewController: MainViewController) {
-        self.mainViewController = viewController
-        print("🔐 [PermissionMonitor] Main view controller set")
-    }
-    
-    private func setupLocationMonitoring() {
-        locationManager = CLLocationManager()
-        locationManager?.delegate = self
-        print("🔐 [PermissionMonitor] Location monitoring setup complete")
-    }
-}
-
-// MARK: - Permission Monitor Delegate
-extension PermissionMonitor: CLLocationManagerDelegate {
-    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        print("🔐 [PermissionMonitor] 📍 Location authorization changed to: \(status.rawValue)")
-        
-        // Notify main view controller of permission change
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self,
-                  let mainVC = self.mainViewController else {
-                print("🔐 [PermissionMonitor] No main view controller to notify")
-                return
-            }
-            
-            print("🔐 [PermissionMonitor] Notifying main view controller of permission change")
-            mainVC.handleLocationPermissionChange(status: status)
-        }
-    }
-}
-
-// MARK: - MainViewController Permission Change Handler
-extension MainViewController {
-    // Handle location permission changes from system
-    func handleLocationPermissionChange(status: CLAuthorizationStatus) {
-        print("🔐 [MainViewController] REMOVED: Permission change handling disabled by user request")
-        print("🔐 [MainViewController] WebView will use standard permission behavior")
-        
-        // REMOVED: All permission change handling
-        // - No automatic permission injection
-        // - No permission status updates
-        // - WebView handles permissions independently
-    }
-    
-    
-}

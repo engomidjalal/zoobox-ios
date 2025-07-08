@@ -21,16 +21,28 @@ final class CameraPermissionManager {
     
     static func showPermissionDeniedAlert(from viewController: UIViewController) {
         let alert = UIAlertController(
-            title: "Camera Access Needed",
-            message: "Zoobox needs camera access to scan QR codes and upload documents. Please allow camera access in Settings.",
+            title: "Camera Access",
+            message: "Camera access helps you scan QR codes and upload documents, but is not required to use the app. You can enable it in Settings or continue without it.",
             preferredStyle: .alert
         )
+        alert.addAction(UIAlertAction(title: "Continue Anyway", style: .default) { _ in
+            // Continue without camera permission
+        })
         alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
         })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        // iPad-specific popover presentation
+        if UIDevice.current.isIPad {
+            if let popover = alert.popoverPresentationController {
+                popover.sourceView = viewController.view
+                popover.sourceRect = CGRect(x: viewController.view.bounds.midX, y: viewController.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+        }
+        
         viewController.present(alert, animated: true)
     }
 }

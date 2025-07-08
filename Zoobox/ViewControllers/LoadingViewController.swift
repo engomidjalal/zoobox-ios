@@ -13,7 +13,7 @@ class LoadingViewController: UIViewController {
     private var progressTimer: Timer?
     private var timeoutTimer: Timer?
     private var currentProgress: Float = 0.0
-    private let maxTimeout: TimeInterval = 30.0
+    private let maxTimeout: TimeInterval = UIDevice.current.webViewTimeout
     
     // MARK: - UI Components
     

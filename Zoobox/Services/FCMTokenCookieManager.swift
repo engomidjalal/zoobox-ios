@@ -8,6 +8,7 @@
 import Foundation
 import WebKit
 import FirebaseMessaging
+import Network
 
 @MainActor
 class FCMTokenCookieManager: NSObject, ObservableObject {
@@ -16,21 +17,32 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
     @Published var currentFCMToken: String?
     @Published var isTokenSaved = false
     
+    // MARK: - Properties for Apple Guideline Compliance
+    @Published var lastTokenSaveStatus: String = "Not started"
+    @Published var lastTokenSaveTime: Date?
+    
     private let websiteDataStore = WKWebsiteDataStore.default()
     private let cookieName = "FCM_token"
     private let domain = "mikmik.site"
     private let userDefaultsKey = "FCM_Token_Backup"
     private var previousUserId: String?
     
+    // Network monitoring
+    private let networkMonitor = NWPathMonitor()
+    private let networkQueue = DispatchQueue(label: "NetworkMonitor")
+    private var isNetworkAvailable = false
+    
     private override init() {
         super.init()
         loadTokenFromUserDefaults()
         setupTokenMonitoring()
+        setupNetworkMonitoring()
         
         // Initialize previousUserId and check if both cookies exist on app startup
-        Task {
-            await initializeUserIdTracking()
-            await postFCMTokenAndUserIdIfNeeded()
+        // Use Task.detached to avoid potential deadlock in init
+        Task.detached { [weak self] in
+            await self?.initializeUserIdTracking()
+            await self?.postFCMTokenAndUserIdIfNeeded()
         }
     }
     
@@ -38,59 +50,117 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
     
     /// Save FCM token as a cookie
     /// - Parameter token: The FCM token to save
-    func saveFCMTokenAsCookie(_ token: String?) {
-        guard let token = token, !token.isEmpty else {
-            print("🔥 FCM Token is empty or nil - cannot save as cookie")
+    func saveFCMTokenAsCookie() {
+        // FIXED: Apple Guideline 4.5.4 - Push notifications must be optional
+        // App must function normally even without FCM tokens
+        
+        // Add retry logic for FCM token requests
+        attemptFCMTokenRequest(retryCount: 3)
+    }
+    
+    private func attemptFCMTokenRequest(retryCount: Int) {
+        guard retryCount > 0 else {
+            print("🔥 [FCMTokenCookieManager] ❌ Max retries reached - FCM token request failed")
+            self.lastTokenSaveStatus = "Max retries reached (optional)"
             return
         }
         
-        print("🔥 🔥 🔥 SAVING FCM TOKEN AS COOKIE: \(token)")
+        // Check network availability before making request
+        guard isNetworkAvailable else {
+            print("🔥 [FCMTokenCookieManager] 🌐 Network unavailable - retrying FCM token request...")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                self.attemptFCMTokenRequest(retryCount: retryCount - 1)
+            }
+            return
+        }
         
-        Task {
-            await createFCMTokenCookie(token: token)
+        Messaging.messaging().token { [weak self] token, error in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                
+                if let error = error {
+                    print("🔥 [FCMTokenCookieManager] ℹ️ FCM token error (retry \(4 - retryCount)/3): \(error.localizedDescription)")
+                    
+                    // Retry after a delay for certain errors
+                    if self.shouldRetryForError(error) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            self.attemptFCMTokenRequest(retryCount: retryCount - 1)
+                        }
+                    } else {
+                        self.lastTokenSaveStatus = "FCM token error (optional)"
+                    }
+                    return
+                }
+                
+                guard let token = token, !token.isEmpty else {
+                    print("🔥 [FCMTokenCookieManager] ℹ️ No FCM token available - retrying...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.attemptFCMTokenRequest(retryCount: retryCount - 1)
+                    }
+                    return
+                }
+                
+                // Validate token format
+                if self.isValidFCMToken(token) {
+                    self.saveFCMTokenAsCookie(token: token)
+                } else {
+                    print("🔥 [FCMTokenCookieManager] ❌ Invalid FCM token format - retrying...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.attemptFCMTokenRequest(retryCount: retryCount - 1)
+                    }
+                }
+            }
         }
     }
     
-    /// Create FCM token cookie in WebView
-    /// - Parameter token: The FCM token value
-    private func createFCMTokenCookie(token: String) async {
-        do {
-            // Create cookie properties
-            var cookieProperties: [HTTPCookiePropertyKey: Any] = [
-                .name: cookieName,
-                .value: token,
-                .domain: domain,
-                .path: "/"
-            ]
-            
-            // Set expiration to 1 year from now
-            let expirationDate = Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date()
-            cookieProperties[.expires] = expirationDate
-            
-            // Create the cookie
-            guard let cookie = HTTPCookie(properties: cookieProperties) else {
-                print("🔥 Failed to create FCM token cookie")
-                return
+    private func shouldRetryForError(_ error: Error) -> Bool {
+        let errorCode = (error as NSError).code
+        // Retry for network errors, but not for auth errors
+        return errorCode != -1012 && errorCode != -1009 // Not auth error or offline
+    }
+    
+    private func isValidFCMToken(_ token: String) -> Bool {
+        // Basic FCM token validation - should be at least 30 characters and contain colons
+        return token.count > 30 && token.contains(":")
+    }
+    
+    private func saveFCMTokenAsCookie(token: String) {
+        print("🔥 [FCMTokenCookieManager] 💾 Saving FCM token as cookie (optional feature)")
+        print("🔥 [FCMTokenCookieManager] Token: \(token.prefix(20))...")
+        
+        // Create cookie with FCM token
+        let cookie = HTTPCookie(properties: [
+            .domain: "mikmik.site",
+            .path: "/",
+            .name: cookieName,
+            .value: token,
+            .secure: "TRUE",
+            .expires: Date().addingTimeInterval(60 * 60 * 24 * 30) // 30 days
+        ])
+        
+        guard let cookie = cookie else {
+            print("🔥 [FCMTokenCookieManager] ℹ️ Failed to create FCM cookie (app continues normally)")
+            self.lastTokenSaveStatus = "Cookie creation failed (optional)"
+            return
+        }
+        
+        // Save cookie to WebView data store
+        websiteDataStore.httpCookieStore.setCookie(cookie) { [weak self] in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                
+                print("🔥 [FCMTokenCookieManager] ✅ FCM token saved as cookie successfully")
+                self.lastTokenSaveStatus = "FCM token saved successfully"
+                self.lastTokenSaveTime = Date()
+                
+                // Save to UserDefaults as backup
+                self.saveTokenToUserDefaults(token)
+                
+                // Optional: Post token to server if user_id is available
+                Task {
+                    await self.postTokenToServerIfUserIdExists(token: token)
+                }
             }
-            
-            // Add cookie to WebView store
-            try await websiteDataStore.httpCookieStore.setCookie(cookie)
-            
-            await MainActor.run {
-                self.currentFCMToken = token
-                self.isTokenSaved = true
-            }
-            
-            // Backup token to UserDefaults
-            saveTokenToUserDefaults(token)
-            
-            print("🔥 FCM Token saved as cookie: \(token)")
-
-            // After saving the FCM token as a cookie, check if both cookies are now available
-            await checkAndPostBothCookiesIfAvailable()
-            
-        } catch {
-            print("🔥 Error saving FCM token as cookie: \(error)")
         }
     }
     
@@ -136,7 +206,7 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
             print("🔥 🔥 🔥 FCM TOKEN CHANGED - SAVING NEW TOKEN AS COOKIE")
             print("🔥 Previous token: \(currentFCMToken ?? "nil")")
             print("🔥 New token: \(newToken)")
-            saveFCMTokenAsCookie(newToken)
+            saveFCMTokenAsCookie(token: newToken)
         } else {
             print("🔥 FCM token unchanged: \(newToken)")
         }
@@ -174,7 +244,7 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
             if let token = token {
                 print("🔥 🔥 🔥 FORCE SAVING FCM TOKEN AS COOKIE: \(token)")
                 Task { @MainActor in
-                    self?.saveFCMTokenAsCookie(token)
+                    self?.saveFCMTokenAsCookie(token: token)
                 }
             } else {
                 print("🔥 No current FCM token available for force save")
@@ -201,6 +271,19 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
     private func setupTokenMonitoring() {
         // Monitor cookie changes
         websiteDataStore.httpCookieStore.add(self)
+    }
+    
+    // MARK: - Network Monitoring
+    
+    private func setupNetworkMonitoring() {
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            let isAvailable = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                self?.isNetworkAvailable = isAvailable
+                print("🔥 [FCMTokenCookieManager] 🌐 Network status: \(isAvailable ? "Available" : "Unavailable")")
+            }
+        }
+        networkMonitor.start(queue: networkQueue)
     }
     
     // MARK: - Cookie Validation
@@ -306,7 +389,7 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
                 if let firebaseToken = firebaseToken, !firebaseToken.isEmpty {
                     if cookieToken != firebaseToken {
                         print("🔥 🔥 🔥 MISMATCH DETECTED - SAVING FCM TOKEN AS COOKIE 🔥 🔥 🔥")
-                        await self?.saveFCMTokenAsCookie(firebaseToken)
+                        await self?.saveFCMTokenAsCookie(token: firebaseToken)
                     } else {
                         print("🔥 ✅ FCM Token cookie is up to date")
                     }
@@ -414,6 +497,65 @@ class FCMTokenCookieManager: NSObject, ObservableObject {
     
     deinit {
         websiteDataStore.httpCookieStore.remove(self)
+        networkMonitor.cancel()
+    }
+    
+    // MARK: - Server Integration (Optional)
+    
+    /// Optional: Post token to server if user_id is available
+    /// This is completely optional and won't block app functionality
+    private func postTokenToServerIfUserIdExists(token: String) async {
+        print("🔥 [FCMTokenCookieManager] 🌐 Checking if user_id exists to post token to server (optional)")
+        
+        // Check if user_id cookie exists
+        do {
+            let cookies = try await websiteDataStore.httpCookieStore.allCookies()
+            let userIdCookie = cookies.first { cookie in
+                cookie.domain.contains("mikmik.site") && cookie.name == "user_id"
+            }
+            
+            guard let userIdCookie = userIdCookie else {
+                print("🔥 [FCMTokenCookieManager] ℹ️ No user_id cookie found - skipping server post (app continues normally)")
+                return
+            }
+            
+            print("🔥 [FCMTokenCookieManager] 🌐 Posting FCM token to server (optional)")
+            
+            // Post token to server
+            await postTokenToServer(token: token, userId: userIdCookie.value)
+            
+        } catch {
+            print("🔥 [FCMTokenCookieManager] ℹ️ Error accessing cookies (app continues normally): \(error)")
+        }
+    }
+    
+    /// Post FCM token to server
+    private func postTokenToServer(token: String, userId: String) async {
+        print("🔥 [FCMTokenCookieManager] 🌐 Posting token to server for user: \(userId.prefix(10))...")
+        
+        // Use the same endpoint as the main POST function
+        let url = URL(string: "https://mikmik.site/FCM_token_updater.php")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        
+        let bodyString = "user_id=\(userId)&FCM_token=\(token)&device_type=ios"
+        request.httpBody = bodyString.data(using: .utf8)
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🔥 [FCMTokenCookieManager] 🌐 Server response: \(httpResponse.statusCode)")
+                
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("🔥 [FCMTokenCookieManager] 🌐 Server response body: \(responseString)")
+                }
+            }
+            
+        } catch {
+            print("🔥 [FCMTokenCookieManager] ℹ️ Server post failed (app continues normally): \(error)")
+        }
     }
 }
 

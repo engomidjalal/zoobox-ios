@@ -193,9 +193,9 @@ console.log('🔐 Zoobox Permission Override System Initializing...');
                     }
                 });
                 
-                // Return rejected promise
+                // Return rejected promise with more user-friendly message
                 return Promise.reject(new DOMException(
-                    'Permission denied - please grant ' + missingPermissions.join(' and ') + ' permission in the app',
+                    'Permission not granted - some features may be limited. You can enable permissions in the app settings.',
                     'NotAllowedError'
                 ));
             }

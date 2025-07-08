@@ -33,7 +33,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Initialize connectivity monitoring
         setupConnectivityMonitoring()
         
+        // Initialize location update service
+        setupLocationUpdateService()
+        
         // Background tasks removed - using FCM only
+        
+        // Add crash logging
+        setupCrashLogging()
         
         return true
     }
@@ -86,24 +92,74 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         print("📡 AppDelegate: Connectivity monitoring initialized")
     }
     
+    private func setupLocationUpdateService() {
+        // Initialize location update service
+        let locationService = LocationUpdateService.shared
+        print("📍 AppDelegate: Location update service initialized")
+        
+        // Don't start location services here - let the onboarding flow handle permissions first
+        print("📍 AppDelegate: Location services will start after proper permission flow")
+    }
+    
     private func setupFCMTokenCookieManager() {
         // Initialize FCM token cookie manager
         let fcmTokenManager = FCMTokenCookieManager.shared
         print("🔥 AppDelegate: FCM token cookie manager initialized")
         
-        // Try to get existing FCM token and save it as cookie if available
-        Messaging.messaging().token { token, error in
-            if let error = error {
-                print("🔥 Error getting FCM token: \(error)")
-                return
-            }
+        // FIXED: Apple Guideline 4.5.4 - Let FCM manager handle token internally
+        // This makes FCM tokens truly optional - app doesn't depend on them
+        print("🔥 AppDelegate: FCM token will be saved automatically when available")
+        fcmTokenManager.saveFCMTokenAsCookie()
+    }
+    
+    private func setupCrashLogging() {
+        // Set up exception handler
+        NSSetUncaughtExceptionHandler { exception in
+            print("🔥 CRASH DETECTED: \(exception)")
+            print("🔥 Reason: \(exception.reason ?? "Unknown")")
+            print("🔥 Stack trace: \(exception.callStackSymbols)")
             
-            if let token = token {
-                print("🔥 Got existing FCM token: \(token)")
-                Task { @MainActor in
-                    fcmTokenManager.saveFCMTokenAsCookie(token)
-                }
-            }
+            // Save to UserDefaults for later retrieval
+            let crashInfo = [
+                "reason": exception.reason ?? "Unknown",
+                "name": exception.name.rawValue,
+                "stackTrace": exception.callStackSymbols.joined(separator: "\n"),
+                "timestamp": Date().description
+            ]
+            UserDefaults.standard.set(crashInfo, forKey: "LastCrashInfo")
+            UserDefaults.standard.synchronize()
+        }
+        
+        // Set up signal handler for EXC_BAD_ACCESS crashes
+        signal(SIGABRT) { signal in
+            print("🔥 SIGNAL CRASH DETECTED: SIGABRT (\(signal))")
+            let crashInfo = [
+                "signal": "SIGABRT",
+                "code": "\(signal)",
+                "timestamp": Date().description
+            ]
+            UserDefaults.standard.set(crashInfo, forKey: "LastCrashInfo")
+            UserDefaults.standard.synchronize()
+        }
+        
+        signal(SIGSEGV) { signal in
+            print("🔥 SIGNAL CRASH DETECTED: SIGSEGV (\(signal))")
+            let crashInfo = [
+                "signal": "SIGSEGV", 
+                "code": "\(signal)",
+                "timestamp": Date().description
+            ]
+            UserDefaults.standard.set(crashInfo, forKey: "LastCrashInfo")
+            UserDefaults.standard.synchronize()
+        }
+        
+        // Check for previous crash on startup
+        if let lastCrash = UserDefaults.standard.dictionary(forKey: "LastCrashInfo") {
+            print("🔥 PREVIOUS CRASH DETECTED:")
+            print("🔥 \(lastCrash)")
+            
+            // Clear the crash info after reporting
+            UserDefaults.standard.removeObject(forKey: "LastCrashInfo")
         }
     }
 }
@@ -194,10 +250,10 @@ extension AppDelegate: MessagingDelegate {
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         print("🔥 FCM Token received: \(fcmToken ?? "nil")")
         
-        // Save FCM token as cookie
-        if let token = fcmToken {
-            FCMTokenCookieManager.shared.saveFCMTokenAsCookie(token)
-        }
+        // FIXED: Apple Guideline 4.5.4 - Make FCM tokens optional
+        // Let the FCM manager handle saving the token internally
+        print("🔥 FCM Token will be saved automatically by FCM manager")
+        FCMTokenCookieManager.shared.saveFCMTokenAsCookie()
     }
 }
 

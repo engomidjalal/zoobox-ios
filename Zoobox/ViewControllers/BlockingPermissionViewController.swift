@@ -7,7 +7,7 @@ class BlockingPermissionViewController: UIViewController {
     
     private let titleLabel: UILabel = {
         let label = UILabel()
-        label.text = "Permissions Required"
+        label.text = "Optional Permissions"
         label.font = UIFont.systemFont(ofSize: 28, weight: .bold)
         label.textAlignment = .center
         label.numberOfLines = 0
@@ -17,7 +17,7 @@ class BlockingPermissionViewController: UIViewController {
     
     private let descriptionLabel: UILabel = {
         let label = UILabel()
-        label.text = "You must grant all permissions to continue."
+        label.text = "These permissions help improve your experience, but are not required to use the app."
         label.font = UIFont.systemFont(ofSize: 16, weight: .regular)
         label.textAlignment = .center
         label.numberOfLines = 0
@@ -28,17 +28,26 @@ class BlockingPermissionViewController: UIViewController {
     private let stackView = UIStackView()
     private let continueButton: UIButton = {
         let button = UIButton(type: .system)
-        button.setTitle("Continue", for: .normal)
+        button.setTitle("Continue to App", for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         button.backgroundColor = .zooboxButtonPrimary
         button.setTitleColor(.zooboxTextLight, for: .normal)
         button.layer.cornerRadius = 12
-        button.isEnabled = false
-        button.alpha = 0.5
+        button.isEnabled = true
+        button.alpha = 1.0
         button.addTarget(self, action: #selector(continueButtonTapped), for: .touchUpInside)
         return button
     }()
     
+    private let skipButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitle("Skip Permissions", for: .normal)
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+        button.setTitleColor(.zooboxRed, for: .normal)
+        button.addTarget(self, action: #selector(skipButtonTapped), for: .touchUpInside)
+        return button
+    }()
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .zooboxBackground
@@ -56,11 +65,13 @@ class BlockingPermissionViewController: UIViewController {
         view.addSubview(descriptionLabel)
         view.addSubview(stackView)
         view.addSubview(continueButton)
+        view.addSubview(skipButton)
         
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         descriptionLabel.translatesAutoresizingMaskIntoConstraints = false
         stackView.translatesAutoresizingMaskIntoConstraints = false
         continueButton.translatesAutoresizingMaskIntoConstraints = false
+        skipButton.translatesAutoresizingMaskIntoConstraints = false
         
         stackView.axis = .vertical
         stackView.spacing = 24
@@ -82,7 +93,10 @@ class BlockingPermissionViewController: UIViewController {
             continueButton.topAnchor.constraint(equalTo: stackView.bottomAnchor, constant: 40),
             continueButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             continueButton.widthAnchor.constraint(equalToConstant: 200),
-            continueButton.heightAnchor.constraint(equalToConstant: 50)
+            continueButton.heightAnchor.constraint(equalToConstant: 50),
+            
+            skipButton.topAnchor.constraint(equalTo: continueButton.bottomAnchor, constant: 20),
+            skipButton.centerXAnchor.constraint(equalTo: view.centerXAnchor)
         ])
     }
     
@@ -96,13 +110,9 @@ class BlockingPermissionViewController: UIViewController {
         stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         
         if missingPermissions.isEmpty {
-            continueButton.isEnabled = true
-            continueButton.alpha = 1.0
-            descriptionLabel.text = "All permissions granted! You can continue."
+            descriptionLabel.text = "All permissions granted! You're all set."
         } else {
-            continueButton.isEnabled = false
-            continueButton.alpha = 0.5
-            descriptionLabel.text = "You must grant all permissions to continue."
+            descriptionLabel.text = "These permissions help improve your experience, but are not required to use the app."
             for permission in missingPermissions {
                 let row = permissionRow(for: permission)
                 stackView.addArrangedSubview(row)
@@ -114,7 +124,7 @@ class BlockingPermissionViewController: UIViewController {
         let container = UIView()
         let iconLabel = UILabel()
         let nameLabel = UILabel()
-        let settingsButton = UIButton(type: .system)
+        let enableButton = UIButton(type: .system)
         
         iconLabel.font = UIFont.systemFont(ofSize: 32)
         iconLabel.textAlignment = .center
@@ -124,15 +134,16 @@ class BlockingPermissionViewController: UIViewController {
         nameLabel.font = UIFont.systemFont(ofSize: 18, weight: .medium)
         nameLabel.textColor = .zooboxRed
         
-        settingsButton.setTitle("Open Settings", for: .normal)
-        settingsButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
-        settingsButton.setTitleColor(.white, for: .normal)
-        settingsButton.backgroundColor = .zooboxRed
-        settingsButton.layer.cornerRadius = 8
-        settingsButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
-        settingsButton.addTarget(self, action: #selector(openSettings), for: .touchUpInside)
+        enableButton.setTitle("Enable", for: .normal)
+        enableButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
+        enableButton.setTitleColor(.white, for: .normal)
+        enableButton.backgroundColor = .zooboxRed
+        enableButton.layer.cornerRadius = 8
+        enableButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+        enableButton.addTarget(self, action: #selector(enablePermission(_:)), for: .touchUpInside)
+        enableButton.tag = permission.hashValue
         
-        let hStack = UIStackView(arrangedSubviews: [iconLabel, nameLabel, settingsButton])
+        let hStack = UIStackView(arrangedSubviews: [iconLabel, nameLabel, enableButton])
         hStack.axis = .horizontal
         hStack.spacing = 16
         hStack.alignment = .center
@@ -158,20 +169,33 @@ class BlockingPermissionViewController: UIViewController {
         }
     }
     
-    @objc private func openSettings(_ sender: UIButton) {
-        if let url = URL(string: UIApplication.openSettingsURLString) {
-            UIApplication.shared.open(url)
+    @objc private func enablePermission(_ sender: UIButton) {
+        // Find the permission type based on the button tag
+        let permissionType = requiredPermissions.first { $0.hashValue == sender.tag }
+        guard let permission = permissionType else { return }
+        
+        // Request permission
+        permissionManager.requestPermissionDirectly(for: permission)
+        
+        // Update UI after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.checkPermissionsAndUpdateUI()
         }
     }
     
+    @objc private func skipButtonTapped() {
+        proceedToMain()
+    }
+    
     @objc private func continueButtonTapped() {
-        // Only allow if all permissions are granted
-        if missingPermissions.isEmpty {
-            // Go to main app
-            let mainVC = MainViewController()
-            mainVC.modalPresentationStyle = .fullScreen
-            mainVC.modalTransitionStyle = .crossDissolve
-            present(mainVC, animated: true)
-        }
+        proceedToMain()
+    }
+    
+    private func proceedToMain() {
+        // Go to main app regardless of permission status
+        let mainVC = MainViewController()
+        mainVC.modalPresentationStyle = UIModalPresentationStyle.fullScreen
+        mainVC.modalTransitionStyle = UIModalTransitionStyle.crossDissolve
+        present(mainVC, animated: true)
     }
 } 
